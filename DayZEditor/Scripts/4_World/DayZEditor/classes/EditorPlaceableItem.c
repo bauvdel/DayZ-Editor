@@ -118,6 +118,7 @@ class EditorPlaceableItem : Managed
 		if (model.Contains("Fx")) return true;
 		if (model == "ItemOptics") return true;
 
+		//if (model.Contains("preview_")) return true;
 		//! Cursed items
 		if (model == "AKM_TESTBED") return true;
 		if (model == "Red9") return true;

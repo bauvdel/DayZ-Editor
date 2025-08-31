@@ -565,7 +565,8 @@ class EditorObjectManagerModule : Managed
 	}
 	
 	// reverses full p3d file, mostly to overcome ItemPreviewWidgets requiring EntityAI
-	string ConvertP3dFileToPotentialObjectType(string p3d_file)	
+//ORIGINAL	
+/*string ConvertP3dFileToPotentialObjectType(string p3d_file)	
 	{
 		array<EditorPlaceableItem> placeables = m_PlaceableObjectsByP3dPath[p3d_file];
 		if (placeables && placeables.Count() > 0) {
@@ -574,6 +575,40 @@ class EditorObjectManagerModule : Managed
 
 		return string.Empty;
 	}
+*/
+	string ConvertP3dFileToPotentialObjectType(string p3d_file)
+	{
+	    array<EditorPlaceableItem> listByPath = m_PlaceableObjectsByP3dPath[p3d_file];
+	    if (listByPath && listByPath.Count() > 0) {
+	        foreach (EditorPlaceableItem it: listByPath) {
+	            if (!it.Type.Contains(".p3d"))
+	                return it.Type;
+	        }
+	    }
+
+	    string fname = File.GetName(SystemPath.Format(p3d_file));
+	    array<EditorPlaceableItem> listByFile = m_PlaceableObjectsByP3dFile[fname];
+	    if (listByFile && listByFile.Count() > 0) {
+	        foreach (EditorPlaceableItem it2: listByFile) {
+	            if (!it2.Type.Contains(".p3d"))
+	                return it2.Type;
+	        }
+	    }
+
+	    if (p3d_file && p3d_file.Contains(".p3d")) {
+	        string s = SystemPath.Format(p3d_file);
+	        s.Replace("\\", "/");
+	        int i = s.LastIndexOf("/");
+	        if (i != -1) s = s.Substring(i + 1, s.Length() - (i + 1));
+	        int j = s.LastIndexOf(".p3d");
+	        if (j != -1) s = s.Substring(0, j);
+	        string match = "preview_" + s;
+	        if (GetGame().ConfigIsExisting(CFG_VEHICLESPATH + " " + match)) {
+	            return match; 
+	        }
+	    }
+	    return string.Empty;
+	} 
 
 	void Debug()
 	{
@@ -614,7 +649,7 @@ class EditorObjectManagerModule : Managed
 		if (model == "pm73rak") return true;
 		if (model == "trumpet") return true;
 		//TODO add the abstract models 
-
+		if (model && model.IndexOf("preview_") == 0) return true;
 		//! Everything is fine... I hope... :pain:
 		return false;
 	}
