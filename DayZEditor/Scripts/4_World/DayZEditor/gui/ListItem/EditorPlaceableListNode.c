@@ -156,4 +156,9 @@ class EditorPlaceableListNode: EditorListNode
 		
 		return matches_filter;
 	}
+	
+	EditorPlaceableItem GetPlaceableItem()
+	{
+		return m_PlaceableItem;
+	}
 }

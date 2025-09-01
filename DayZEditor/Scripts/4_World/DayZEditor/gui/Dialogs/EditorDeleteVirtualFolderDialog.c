@@ -19,7 +19,7 @@ class EditorDeleteVirtualFolderDialog: EditorDialogBase
     protected void BuildContent()
     {
         string folderName = m_VirtualFolderNode.GetFolderName();
-        string confirmMessage = string.Format("Are you sure you want to delete the virtual folder '%1'?\n\nThis will remove the folder and all its contents from the Virtual Folders list.", folderName);
+        string confirmMessage = string.Format("Are you sure you want to delete the virtual folder '%1'?\n\nThis will remove the folder and all its contents from the Virtual Folders list. This may take a moment.", folderName);
         AddContent(new MessageBoxPrefab(confirmMessage));
     }
     

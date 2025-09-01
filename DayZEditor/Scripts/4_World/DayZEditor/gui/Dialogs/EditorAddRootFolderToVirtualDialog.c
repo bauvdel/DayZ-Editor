@@ -23,9 +23,9 @@ class EditorAddRootFolderToVirtualDialog: EditorDialogBase
     {
         GroupPrefab group = new GroupPrefab("Add Root Folder: " + m_RootFolderPath, this, string.Empty);
         
-        group.Insert(new EditBoxPrefab("New virtual folder (optional)", this, "NewFolderName"));
+        group.Insert(new EditBoxPrefab("Create Folder", this, "NewFolderName"));
         
-        DropdownListPrefab<string> existing = new DropdownListPrefab<string>("Existing virtual folders", this, "SelectedFolder");
+        DropdownListPrefab<string> existing = new DropdownListPrefab<string>("Existing Folders", this, "SelectedFolder");
         EditorVirtualFolderConfig config = GetEditorVirtualFolderConfig();
         if (config && config.VirtualFolders)
         {

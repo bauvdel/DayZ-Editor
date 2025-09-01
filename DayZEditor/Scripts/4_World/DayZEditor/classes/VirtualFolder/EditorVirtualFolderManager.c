@@ -2,6 +2,7 @@ class EditorVirtualFolderManager
 {
     protected static ref EditorVirtualFolderManager s_Instance;
     protected ref EditorVirtualFolderConfig m_Config;
+    protected string m_LastUsedFolder;
     
     void EditorVirtualFolderManager()
     {
@@ -97,6 +98,7 @@ class EditorVirtualFolderManager
         
         if (success)
         {
+            m_LastUsedFolder = folderName;
             m_Config.Save();
             return true;
         }
@@ -150,6 +152,7 @@ class EditorVirtualFolderManager
             
         if (folderData.AddRootFolder(rootFolderPath))
         {
+            m_LastUsedFolder = virtualFolderName;
             m_Config.Save();
             return true;
         }
@@ -184,5 +187,23 @@ class EditorVirtualFolderManager
         }
         
         return folderItems;
+    }
+    
+    string GetLastUsedFolder()
+    {
+        return m_LastUsedFolder;
+    }
+    
+    bool HasLastUsedFolder()
+    {
+        return m_LastUsedFolder != string.Empty && m_Config.VirtualFolders.Contains(m_LastUsedFolder);
+    }
+    
+    bool AddItemToLastUsedFolder(EditorPlaceableItem placeableItem, int addType = 0)
+    {
+        if (!HasLastUsedFolder())
+            return false;
+            
+        return AddItemToFolder(placeableItem, m_LastUsedFolder, addType);
     }
 }

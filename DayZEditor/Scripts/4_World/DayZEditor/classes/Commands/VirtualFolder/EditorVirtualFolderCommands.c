@@ -4,8 +4,6 @@ class EditorAddToVirtualFolderCommand: EditorCommand
     {
         super.Execute(sender, args);
         
-        
-        // Get the clicked item using working pattern
         EditorPlaceableItem m_PlaceableItem = null;
         Param1<EditorPlaceableItem> p1 = Param1<EditorPlaceableItem>.Cast(GetData());
         if (p1) {
@@ -14,7 +12,6 @@ class EditorAddToVirtualFolderCommand: EditorCommand
         
         if (!m_PlaceableItem)
         {
-            EditorLog.Warning("No placeable item provided to AddToVirtualFolderCommand");
             return true;
         }
         
@@ -22,11 +19,8 @@ class EditorAddToVirtualFolderCommand: EditorCommand
         
         if (!dialog)
         {
-            EditorLog.Error("Dialog creation failed - dialog is null");
             return true;
         }
-        
-        // Note: Working examples don't call ShowDialog() explicitly
         
         return true;
     }
@@ -56,7 +50,6 @@ class EditorDeleteVirtualFolderCommand: EditorCommand
         
         if (!m_VirtualFolderNode)
         {
-            EditorLog.Warning("No virtual folder node provided to DeleteVirtualFolderCommand");
             return true;
         }
         
@@ -64,7 +57,6 @@ class EditorDeleteVirtualFolderCommand: EditorCommand
         
         if (!deleteDialog)
         {
-            EditorLog.Error("Delete dialog creation failed");
             return true;
         }
         
@@ -88,17 +80,30 @@ class EditorRemoveFromVirtualFolderCommand: EditorCommand
     {
         super.Execute(sender, args);
         
-        
-        // Get the clicked item using working pattern
         EditorPlaceableItem m_PlaceableItem = null;
+        
+        // Try to get from context menu data first
         Param1<EditorPlaceableItem> p1 = Param1<EditorPlaceableItem>.Cast(GetData());
         if (p1) {
             m_PlaceableItem = p1.param1;
         }
         
+        // If no context menu data, try to get from selected node
+        if (!m_PlaceableItem && EditorListNode.s_SelectedNode)
+        {
+            if (EditorListNode.s_SelectedNode.IsInherited(EditorPlaceableListNode))
+            {
+                EditorPlaceableListNode placeableNode = EditorPlaceableListNode.Cast(EditorListNode.s_SelectedNode);
+                if (placeableNode)
+                {
+                    m_PlaceableItem = placeableNode.GetPlaceableItem();
+                }
+            }
+        }
+        
         if (!m_PlaceableItem)
         {
-            EditorLog.Warning("No placeable item provided to RemoveFromVirtualFolderCommand");
+            EditorLog.Warning("No placeable item selected for RemoveFromVirtualFolderCommand");
             return true;
         }
             
@@ -130,6 +135,32 @@ class EditorRemoveFromVirtualFolderCommand: EditorCommand
     override string GetIcon()
     {
         return "set:solid image:folder_minus";
+    }
+    
+    override ShortcutKeys GetShortcut()
+    {
+        return { KeyCode.KC_R };
+    }
+    
+    override bool CanExecute()
+    {
+        // Check if there's a selected placeable node
+        if (EditorListNode.s_SelectedNode && EditorListNode.s_SelectedNode.IsInherited(EditorPlaceableListNode))
+        {
+            EditorPlaceableListNode placeableNode = EditorPlaceableListNode.Cast(EditorListNode.s_SelectedNode);
+            if (placeableNode)
+            {
+                EditorPlaceableItem item = placeableNode.GetPlaceableItem();
+                if (item)
+                {
+                    // Check if the item is actually in a virtual folder
+                    string folderName = EditorVirtualFolderManager.GetInstance().GetItemFolder(item);
+                    return folderName != string.Empty;
+                }
+            }
+        }
+        
+        return false;
     }
 }
 
@@ -167,7 +198,6 @@ class EditorAddRootFolderToVirtualCommand: EditorCommand
         
         if (folderName == "" || folderName.Contains("("))
         {
-            EditorLog.Warning("Invalid folder for virtual folder assignment: " + folderName);
             return true;
         }
         
@@ -190,7 +220,6 @@ class EditorAddRootFolderToVirtualCommand: EditorCommand
         
         if (!dialog)
         {
-            EditorLog.Error("Root folder dialog creation failed - dialog is null");
             return true;
         }
         

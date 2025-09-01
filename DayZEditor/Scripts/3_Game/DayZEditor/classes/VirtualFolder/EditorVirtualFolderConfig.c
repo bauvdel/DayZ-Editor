@@ -1,8 +1,8 @@
 class EditorVirtualFolderConfig
 {
     // Config constants
-    static const bool LOAD_ON_SERVER = true;
-    static const bool LOAD_ON_CLIENT = true;
+    // static const bool LOAD_ON_SERVER = true;
+    // static const bool LOAD_ON_CLIENT = true;
     
     // Config location
     static const string FOLDER = "$saves:Editor/VirtualFolders";
@@ -23,12 +23,12 @@ class EditorVirtualFolderConfig
         
         SetDefaultValues();
         
-        if (GetGame().IsClient() && !LOAD_ON_CLIENT)
+        /*if (GetGame().IsClient() && !LOAD_ON_CLIENT)
             return;
             
         if (GetGame().IsDedicatedServer() && !LOAD_ON_SERVER)
             return;
-        
+        */
         if (!FileExist(path))
         {
             EditorLog.Info("Virtual Folders config file does not exist, creating default");

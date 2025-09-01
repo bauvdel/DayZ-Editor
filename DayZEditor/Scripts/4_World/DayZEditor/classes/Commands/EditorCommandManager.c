@@ -36,6 +36,7 @@ class EditorCommandManager
 	EditorCommand RemoveFromVirtualFolderCommand;
 	EditorCommand DeleteVirtualFolderCommand;
 	EditorCommand AddRootFolderToVirtualCommand;
+	EditorCommand QuickAddToVirtualFolderCommand;
 	
 	void ~EditorCommandManager()
 	{		
@@ -93,6 +94,7 @@ class EditorCommandManager
 		RemoveFromVirtualFolderCommand = RegisterCommand(EditorRemoveFromVirtualFolderCommand);
 		DeleteVirtualFolderCommand = RegisterCommand(EditorDeleteVirtualFolderCommand);
 		AddRootFolderToVirtualCommand = RegisterCommand(EditorAddRootFolderToVirtualCommand);
+		QuickAddToVirtualFolderCommand = RegisterCommand(EditorQuickAddToVirtualFolderCommand);
 	
 		RegisterCommand(EditorBrushPropertiesCommand);
 		BrushToggleCommand = RegisterCommand(EditorBrushToggleCommand);

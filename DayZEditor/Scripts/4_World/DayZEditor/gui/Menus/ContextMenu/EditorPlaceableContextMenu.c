@@ -20,7 +20,8 @@ class EditorPlaceableContextMenu: EditorContextMenu
 		AddMenuDivider();
 		
 		// Virtual Folder options - show Add or Remove based on current state
-		string existingFolder = EditorVirtualFolderManager.GetInstance().GetItemFolder(context);
+		EditorVirtualFolderManager vfManager = EditorVirtualFolderManager.GetInstance();
+		string existingFolder = vfManager.GetItemFolder(context);
 		
 		if (existingFolder != string.Empty)
 		{
@@ -34,6 +35,17 @@ class EditorPlaceableContextMenu: EditorContextMenu
 		}
 		else
 		{
+			// Quick Add (if available)
+			if (vfManager.HasLastUsedFolder())
+			{
+				EditorCommand quickAddCmd = m_Editor.CommandManager.Get(EditorQuickAddToVirtualFolderCommand);
+				if (!quickAddCmd) {
+					quickAddCmd = m_Editor.CommandManager.RegisterCommand(EditorQuickAddToVirtualFolderCommand);
+				}
+				quickAddCmd.SetData(new Param1<EditorPlaceableItem>(context));
+				AddMenuButton(quickAddCmd);
+			}
+			
 			// Add
 			EditorCommand addCmd = m_Editor.CommandManager.Get(EditorAddToVirtualFolderCommand);
 			if (!addCmd) {

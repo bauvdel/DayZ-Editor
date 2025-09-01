@@ -23,8 +23,8 @@ class EditorAddToVirtualFolderDialog: EditorDialogBase
     {
         GroupPrefab group = new GroupPrefab("Virtual Folders", this, string.Empty);
         
-        group.Insert(new EditBoxPrefab("New folder (optional)", this, "NewFolderName"));
-        DropdownListPrefab<string> existing = new DropdownListPrefab<string>("Existing folders", this, "SelectedFolder"); 
+        group.Insert(new EditBoxPrefab("Create Folder", this, "NewFolderName"));
+        DropdownListPrefab<string> existing = new DropdownListPrefab<string>("Existing Folders", this, "SelectedFolder"); 
         EditorVirtualFolderConfig config = GetEditorVirtualFolderConfig();
         if (config && config.VirtualFolders)
         {
