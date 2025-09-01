@@ -300,6 +300,34 @@ class EditorFolderListNode: EditorListNode
 		return super.OnMouseButtonDown(w, x, y, button);
 	}
 	
+	string GetFolderText()
+	{
+		return m_Text;
+	}
+	
+	string GetFullFolderPath()
+	{
+		string path = m_Text;
+		EditorListNode parent = m_Parent;
+		
+		while (parent && parent.IsInherited(EditorFolderListNode))
+		{
+			EditorFolderListNode parentFolder = EditorFolderListNode.Cast(parent);
+			if (parentFolder)
+			{
+				string parentText = parentFolder.GetFolderText();
+				if (parentText && parentText != "")
+				{
+					path = parentText + "/" + path;
+				}
+			}
+			parent = parent.m_Parent;
+		}
+		
+		path.ToLower();
+		return path;
+	}
+	
 	override bool FilterType(string filter, bool favorites)
 	{
 		return m_Text.Contains(filter);

@@ -78,6 +78,11 @@ class EditorHud: ScriptView
 	protected bool m_IsVisible = true;
 	protected bool m_SearchBarDirty;
 	
+	// Folder collapse tracking
+	protected int m_CollapseIteration;
+	protected int m_CollapseMaxIterations;
+	protected bool m_SuppressFolderCollapse;
+	
 	Widget Menubar, ToolsWrapper, InfobarFrame, ToolbarFrame;
 	Widget LeftbarCategoryConfig, LeftbarCategoryStatic, SearchFavoriteTabPanel;
 	Widget CameraPanel;
@@ -137,6 +142,8 @@ class EditorHud: ScriptView
 	protected ref map<string, EditorListNode> m_FolderNodes = new map<string, EditorListNode>();		
 	protected ref map<int, ref array<EditorListNode>> m_FolderNodesByDepth = new map<int, ref array<EditorListNode>>();		
 	protected ref array<EditorListNode> m_SearchableListNodes = {};
+	protected ref array<ref EditorVirtualFolderListNode> m_VirtualFolderNodes = {};
+	protected ref EditorFolderListNode m_VirtualFoldersRoot;
 	
 	void EditorHud(notnull Editor editor)
 	{	
@@ -230,6 +237,9 @@ class EditorHud: ScriptView
 		}
 		
 		EditorLog.Info("Loaded %1 Placeable Objects", placeable_items.Count().ToString());
+		
+		// Load Virtual Folders
+		LoadVirtualFolders();
 		
 		SearchFavoriteTabPanel.SetColor(m_ToolbarColor);
 		
@@ -1049,27 +1059,55 @@ class EditorHud: ScriptView
 		bool favorite_toggle = GetEditor().GetSettings().ShowFavoriteObjects;
 		string search_string = LeftSearchBar.GetText();
 		search_string.ToLower();
+		
 				
 		if (search_string.Length() < 3 || favorite_toggle) {
-			// Smoother UX
-			if (m_LastSearchString.Length() < 3 && m_LastFavoritesState == favorite_toggle) {
+			// Smoother UX - only skip if we're staying in the same short search state
+			if (search_string.Length() < 3 && m_LastSearchString.Length() < 3 && m_LastFavoritesState == favorite_toggle && search_string == m_LastSearchString) {
 				return;
 			}
 						
 			for (int i = 0; i < m_SearchableListNodes.Count(); i++) {
 				bool filter_state = m_SearchableListNodes[i].FilterType("", favorite_toggle);
-				m_SearchableListNodes[i].Show(filter_state);
-				if (filter_state) {
-					GetGame().GetCallQueue(CALL_CATEGORY_GUI).CallLater(m_SearchableListNodes[i].GetListParent().SetCollapsed, 0, 0, false);
+				
+				// Don't call Show() on virtual folders - they handle their own visibility internally
+				if (!m_SearchableListNodes[i].IsInherited(EditorVirtualFolderListNode)) {
+					m_SearchableListNodes[i].Show(filter_state);
+					if (filter_state) {
+						GetGame().GetCallQueue(CALL_CATEGORY_GUI).CallLater(m_SearchableListNodes[i].GetListParent().SetCollapsed, 0, 0, false);
+					}
 				}
 			}
 			
-			if (!favorite_toggle) {
-				foreach (string s, EditorListNode folder_node: m_FolderNodes) {
-					if (folder_node.GetListParent()) {
-						GetGame().GetCallQueue(CALL_CATEGORY_GUI).CallLater(folder_node.SetCollapsed, 0, 0, true);
+			// Also expand virtual folders when their items match
+			bool hasShortSearchVirtualFolderMatches = false;
+			foreach (EditorVirtualFolderListNode virtualFolderNode: m_VirtualFolderNodes) {
+				bool hasMatchingChildren = false;
+				foreach (EditorListNode childNode: virtualFolderNode.ChildrenItems) {
+					if (childNode.FilterType("", favorite_toggle)) {
+						hasMatchingChildren = true;
+						break;
 					}
 				}
+				if (hasMatchingChildren) {
+					GetGame().GetCallQueue(CALL_CATEGORY_GUI).CallLater(virtualFolderNode.SetCollapsed, 0, 0, false);
+					hasShortSearchVirtualFolderMatches = true;
+				}
+			}
+			
+			// Expand Virtual Folders root if any virtual folders have matches
+			if (hasShortSearchVirtualFolderMatches && m_VirtualFoldersRoot) {
+				GetGame().GetCallQueue(CALL_CATEGORY_GUI).CallLater(m_VirtualFoldersRoot.SetCollapsed, 0, 0, false);
+			} else if (hasShortSearchVirtualFolderMatches && !m_VirtualFoldersRoot) {
+				EditorLog.Warning("Virtual Folders root is null during short search expansion");
+			}
+			
+			// Collapse folders when transitioning from long search to short search or when search is cleared
+			// But only if not suppressed (e.g., during virtual folder operations)
+			if (!m_SuppressFolderCollapse && (search_string.Length() == 0 || (m_LastSearchString.Length() >= 3 && search_string.Length() < 3))) {
+				
+				// Use the same recursive approach as the working CollapseAll command
+				CollapseAllFolders();
 			}
 						
 			m_LastSearchString = search_string;
@@ -1077,8 +1115,37 @@ class EditorHud: ScriptView
 			return;
 		}
 	
+		bool hasVirtualFolderMatches = false;
+		
 		foreach (EditorListNode list_node: m_SearchableListNodes) {
-			list_node.Show(list_node.FilterType(search_string, favorite_toggle));
+			bool matches = list_node.FilterType(search_string, favorite_toggle);
+			
+			// Don't call Show() on virtual folders - they handle their own visibility internally
+			if (!list_node.IsInherited(EditorVirtualFolderListNode)) {
+				list_node.Show(matches);
+				
+				// Expand virtual folders if they have matching children
+				if (matches) {
+					EditorListNode matchParent = list_node.GetListParent();
+					if (matchParent && matchParent.IsInherited(EditorVirtualFolderListNode)) {
+						EditorVirtualFolderListNode virtualParent = EditorVirtualFolderListNode.Cast(matchParent);
+						if (virtualParent) {
+							virtualParent.SetCollapsed(false);
+							hasVirtualFolderMatches = true;
+						}
+					}
+				}
+			} else if (matches) {
+				// This is a virtual folder that has matches - track it for root expansion
+				hasVirtualFolderMatches = true;
+			}
+		}
+		
+		// Expand Virtual Folders root if any virtual folders have matches
+		if (hasVirtualFolderMatches && m_VirtualFoldersRoot) {
+			m_VirtualFoldersRoot.SetCollapsed(false);
+		} else if (hasVirtualFolderMatches && !m_VirtualFoldersRoot) {
+			EditorLog.Warning("Virtual Folders root is null during search expansion");
 		}
 						
 		LeftbarScroll.VScrollToPos(0);
@@ -1516,5 +1583,983 @@ class EditorHud: ScriptView
         }
 
         return inside;
+	}
+	
+	void LoadVirtualFolders()
+	{
+		// Suppress folder collapse during virtual folder operations to prevent slowdown
+		m_SuppressFolderCollapse = true;
+		
+		// First rebuild the base folder tree to restore any unlinked items
+		RebuildBaseFolderTree();
+		
+		// Clear existing virtual folder nodes
+		foreach (EditorVirtualFolderListNode existingNode: m_VirtualFolderNodes)
+		{
+			if (existingNode)
+				existingNode.GetLayoutRoot().Unlink();
+		}
+		m_VirtualFolderNodes.Clear();
+		
+		// Remove existing virtual folders root
+		if (m_VirtualFoldersRoot)
+		{
+			m_VirtualFoldersRoot.GetLayoutRoot().Unlink();
+			m_FolderNodes.Remove("virtual_folders_root");
+			if (m_FolderNodesByDepth[0])
+			{
+				m_FolderNodesByDepth[0].RemoveItem(m_VirtualFoldersRoot);
+			}
+			m_VirtualFoldersRoot = null;
+		}
+		
+		EditorVirtualFolderManager folderManager = EditorVirtualFolderManager.GetInstance();
+		array<string> folderNames = folderManager.GetFolderNames();
+		
+		if (folderNames.Count() == 0)
+		{
+			// Re-enable folder collapse and return if no virtual folders
+			m_SuppressFolderCollapse = false;
+			return;
+		}
+		
+		// Create Virtual Folders root node
+		m_VirtualFoldersRoot = new EditorFolderListNode("Virtual Folders");
+		m_TemplateController.LeftContent.Insert(m_VirtualFoldersRoot);
+		
+		// Add to folder depth system
+		if (!m_FolderNodesByDepth[0])
+			m_FolderNodesByDepth[0] = {};
+		m_FolderNodesByDepth[0].Insert(m_VirtualFoldersRoot);
+		m_FolderNodes["virtual_folders_root"] = m_VirtualFoldersRoot;
+		
+		// Hide original items that are now in virtual folders BEFORE creating virtual folder contents
+		HideVirtualizedItems();
+		
+		// Create individual virtual folder nodes
+		foreach (string folderName: folderNames)
+		{
+			EditorVirtualFolderData folderData = folderManager.GetFolder(folderName);
+			if (folderData)
+			{
+				EditorVirtualFolderListNode newVirtualFolderNode = new EditorVirtualFolderListNode(folderData.Name, folderData);
+				
+				m_VirtualFoldersRoot.InsertChild(newVirtualFolderNode);
+				m_VirtualFolderNodes.Insert(newVirtualFolderNode);
+				
+				// Add virtual folder itself to searchable nodes so it gets filtered during search
+				m_SearchableListNodes.Insert(newVirtualFolderNode);
+				
+				if (!m_FolderNodesByDepth[1])
+					m_FolderNodesByDepth[1] = {};
+				m_FolderNodesByDepth[1].Insert(newVirtualFolderNode);
+				
+				m_FolderNodes["virtual_folder_" + folderName] = newVirtualFolderNode;
+				
+			}
+			else
+			{
+				EditorLog.Error("Could not get folder data for: " + folderName);
+			}
+		}
+		
+		// Re-enable folder collapse after virtual folder operations are complete
+		m_SuppressFolderCollapse = false;
+	}
+	
+	void RebuildBaseFolderTree()
+	{
+		
+		// Clear all existing folder nodes and rebuild from scratch
+		// This ensures any previously unlinked items are restored
+		m_FolderNodes.Clear();
+		m_FolderNodesByDepth.Clear();
+		m_SearchableListNodes.Clear();
+		
+		// Clear existing content from the left panel (except virtual folders which are handled separately)
+		m_TemplateController.LeftContent.Clear();
+		
+		// Rebuild the folder tree using the same logic as initial load
+		array<ref EditorPlaceableItem> placeable_items = m_Editor.GetPlaceableObjects();
+			
+		foreach (EditorPlaceableItem placeable_item: placeable_items) {		
+			
+			if (m_EditorSettings.ConsoleMode && !placeable_item.ConsoleFriendly) {
+				continue;
+			}
+			
+			string model_name = placeable_item.GetModelName();
+			model_name.Replace(SystemPath.SEPERATOR_ALT, SystemPath.SEPERATOR);
+			model_name.ToLower();
+			model_name.TrimInPlace();
+			if (model_name == "bmp" || model_name == "bmp.p3d" || model_name.Length() == 0) {
+				continue;
+			}
+			
+			if (model_name[0] == SystemPath.SEPERATOR) {
+				model_name = model_name.Substring(1, model_name.Length() - 1);
+			}
+						
+			array<string> model_path_split = {};
+			model_name.Split(SystemPath.SEPERATOR, model_path_split);
+			int depth = model_path_split.Count() - 1;
+			for (int i = 0; i < model_path_split.Count(); i++) {
+				string folder_name = model_path_split[i];
+				string full_path = string.Empty;
+				for (int j = 0; j <= i; j++) {
+					full_path += model_path_split[j];
+					if (j != i) {
+						full_path += SystemPath.SEPERATOR;
+					}
+				}
+												
+				if (i < model_path_split.Count() - 1) {
+					EditorFolderListNode folder_node;
+					if (m_FolderNodes.Contains(full_path)) {
+						folder_node = m_FolderNodes[full_path];
+					} else {
+						folder_node = new EditorFolderListNode(folder_name);
+						m_FolderNodes[full_path] = folder_node;
+						
+						if (!m_FolderNodesByDepth[i]) {
+							m_FolderNodesByDepth[i] = {};
+						}
+						
+						m_FolderNodesByDepth[i].Insert(folder_node);
+							
+						if (i == 0) {
+							m_TemplateController.LeftContent.Insert(folder_node);
+						} else {
+							string directory_parent = full_path.Substring(0, full_path.LastIndexOf(SystemPath.SEPERATOR));
+							EditorFolderListNode parent_node = m_FolderNodes[directory_parent];
+							if (parent_node) {
+								parent_node.InsertChild(folder_node);
+							}
+						}
+					}				
+				}				
+			}
+			
+			string model_directory = model_name.Substring(0, model_name.LastIndexOf(SystemPath.SEPERATOR));
+			EditorPlaceableListNode placeable_node = new EditorPlaceableListNode(placeable_item);
+			m_FolderNodes[model_name] = placeable_node;
+			m_FolderNodes[model_directory].InsertChild(placeable_node);		
+			
+			if (!m_FolderNodesByDepth[depth]) {
+				m_FolderNodesByDepth[depth] = {};
+			}	
+			
+			m_FolderNodesByDepth[depth].Insert(placeable_node);
+			m_SearchableListNodes.Insert(placeable_node);
+		}
+		
+		EditorLog.Info("Rebuilt base folder tree with %1 placeable objects", placeable_items.Count().ToString());
+	}
+	
+	
+	void CollapseAllFolders()
+	{
+		
+		// Try a different approach - use longer delays and direct calls
+		GetGame().GetCallQueue(CALL_CATEGORY_GUI).CallLater(CollapseAllFoldersDelayed, 100, 0);
+	}
+	
+	void CollapseAllFoldersDelayed()
+	{
+		
+		// Start the aggressive approach manually with proper iteration tracking
+		m_CollapseIteration = 0;
+		m_CollapseMaxIterations = 6; // Back to 6 attempts for completeness
+		CollapseAllFoldersAggressively(m_CollapseIteration, m_CollapseMaxIterations);
+	}
+	
+	void CollapseAllFoldersOnce()
+	{
+		// Check if search is active - if so, don't collapse
+		string currentSearchText = LeftSearchBar.GetText();
+		if (currentSearchText.Length() > 0) {
+			return;
+		}
+		
+		int foldersCollapsed = 0;
+		int depthFolders = 0;
+		int namedFolders = 0;
+		int virtualFolders = 0;
+		int searchableFolders = 0;
+		
+		
+		// Check all folder nodes by depth with recursive collapse
+		for (int depth = 0; depth < m_FolderNodesByDepth.Count(); depth++) {
+			if (m_FolderNodesByDepth[depth]) {
+				foreach (EditorListNode folderAtDepth: m_FolderNodesByDepth[depth]) {
+					if (folderAtDepth && folderAtDepth.IsInherited(EditorFolderListNode)) {
+						if (!folderAtDepth.IsCollapsed()) {
+							folderAtDepth.SetCollapsed(true);
+							depthFolders++;
+							foldersCollapsed++;
+						}
+						// Also recursively collapse all children
+						CollapseAllChildren(folderAtDepth);
+					}
+				}
+			}
+		}
+		
+		// Check all named folder nodes with recursive collapse and detailed logging
+		int namedTotal = 0;
+		int namedFolderType = 0;
+		int namedAlreadyCollapsed = 0;
+		
+		foreach (string folderKey, EditorListNode folderNode: m_FolderNodes) {
+			namedTotal++;
+			if (folderNode) {
+				if (folderNode.IsInherited(EditorFolderListNode)) {
+					namedFolderType++;
+					if (!folderNode.IsCollapsed()) {
+						folderNode.SetCollapsed(true);
+						namedFolders++;
+						foldersCollapsed++;
+					} else {
+						namedAlreadyCollapsed++;
+					}
+					// Also recursively collapse all children
+					CollapseAllChildren(folderNode);
+				}
+			}
+		}
+		
+		
+		// Check all virtual folders
+		foreach (EditorVirtualFolderListNode vfNode: m_VirtualFolderNodes) {
+			if (vfNode && !vfNode.IsCollapsed()) {
+				vfNode.SetCollapsed(true);
+				virtualFolders++;
+				foldersCollapsed++;
+			}
+		}
+		
+		// Check Virtual Folders root
+		if (m_VirtualFoldersRoot && !m_VirtualFoldersRoot.IsCollapsed()) {
+			m_VirtualFoldersRoot.SetCollapsed(true);
+			foldersCollapsed++;
+		}
+		
+		// Check all searchable nodes for any folders we might have missed
+		foreach (EditorListNode searchableNode: m_SearchableListNodes) {
+			if (searchableNode && searchableNode.IsInherited(EditorFolderListNode)) {
+				if (!searchableNode.IsCollapsed()) {
+					searchableNode.SetCollapsed(true);
+					searchableFolders++;
+					foldersCollapsed++;
+				}
+			}
+		}
+		
+	}
+	
+	void CollapseAllChildren(EditorListNode parentNode)
+	{
+		if (!parentNode) return;
+		
+		foreach (EditorListNode child: parentNode.ChildrenItems) {
+			if (child && child.IsInherited(EditorFolderListNode)) {
+				if (!child.IsCollapsed()) {
+					child.SetCollapsed(true);
+				}
+				// Recurse into children
+				CollapseAllChildren(child);
+			}
+		}
+	}
+	
+	void CollapseUsingCommandSystem()
+	{
+		// Check if search is active - if so, don't collapse
+		string currentSearchText = LeftSearchBar.GetText();
+		if (currentSearchText.Length() > 0) {
+			return;
+		}
+		
+		
+		int foldersProcessed = 0;
+		
+		// Try to use the EditorCollapseAllCommand approach on every folder we can find
+		for (int depth = 0; depth < m_FolderNodesByDepth.Count(); depth++) {
+			if (m_FolderNodesByDepth[depth]) {
+				foreach (EditorListNode folderAtDepth: m_FolderNodesByDepth[depth]) {
+					if (folderAtDepth && folderAtDepth.IsInherited(EditorFolderListNode)) {
+						// Use the same approach as EditorCollapseAllCommand.CollapseAll
+						ApplyCommandCollapseToFolder(folderAtDepth);
+						foldersProcessed++;
+					}
+				}
+			}
+		}
+		
+		// Also try on all named folders
+		foreach (string folderKey, EditorListNode folderNode: m_FolderNodes) {
+			if (folderNode && folderNode.IsInherited(EditorFolderListNode)) {
+				ApplyCommandCollapseToFolder(folderNode);
+				foldersProcessed++;
+			}
+		}
+		
+	}
+	
+	void ApplyCommandCollapseToFolder(EditorListNode folderNode)
+	{
+		if (!folderNode) return;
+		
+		// Use the exact same logic as EditorCollapseAllCommand.CollapseAll
+		folderNode.SetCollapsed(true);
+		
+		// The working command does NOT recursively collapse children (line 60 is commented out)
+		// So we also don't recurse here
+	}
+	
+	void CollapseAllFoldersAggressively(int iteration, int maxIterations)
+	{
+		// Check if search is active - if so, stop collapsing
+		string currentSearchText = LeftSearchBar.GetText();
+		if (currentSearchText.Length() > 0) {
+			return;
+		}
+		
+		if (iteration >= maxIterations) {
+			return;
+		}
+		
+		iteration++;
+		int foldersCollapsedThisIteration = 0;
+		
+		
+		// Check all folder nodes by depth
+		for (int depth = 0; depth < m_FolderNodesByDepth.Count(); depth++) {
+			if (m_FolderNodesByDepth[depth]) {
+				foreach (EditorListNode folderAtDepth: m_FolderNodesByDepth[depth]) {
+					if (folderAtDepth && folderAtDepth.IsInherited(EditorFolderListNode)) {
+						if (!folderAtDepth.IsCollapsed()) {
+							folderAtDepth.SetCollapsed(true);
+							foldersCollapsedThisIteration++;
+						}
+					}
+				}
+			}
+		}
+		
+		// Check all named folder nodes
+		foreach (string folderKey, EditorListNode folderNode: m_FolderNodes) {
+			if (folderNode && folderNode.IsInherited(EditorFolderListNode)) {
+				if (!folderNode.IsCollapsed()) {
+					folderNode.SetCollapsed(true);
+					foldersCollapsedThisIteration++;
+				}
+			}
+		}
+		
+		// Check all virtual folders
+		foreach (EditorVirtualFolderListNode vfNode: m_VirtualFolderNodes) {
+			if (vfNode && !vfNode.IsCollapsed()) {
+				vfNode.SetCollapsed(true);
+				foldersCollapsedThisIteration++;
+			}
+		}
+		
+		// Check Virtual Folders root
+		if (m_VirtualFoldersRoot && !m_VirtualFoldersRoot.IsCollapsed()) {
+			m_VirtualFoldersRoot.SetCollapsed(true);
+			foldersCollapsedThisIteration++;
+		}
+		
+		// Check all searchable nodes for any folders we might have missed
+		foreach (EditorListNode searchableNode: m_SearchableListNodes) {
+			if (searchableNode && searchableNode.IsInherited(EditorFolderListNode)) {
+				if (!searchableNode.IsCollapsed()) {
+					searchableNode.SetCollapsed(true);
+					foldersCollapsedThisIteration++;
+				}
+			}
+		}
+		
+		
+		// If no folders were collapsed for 2 consecutive attempts, stop early
+		if (foldersCollapsedThisIteration == 0 && iteration > 1) {
+			return;
+		}
+		
+		// Schedule next iteration if we haven't reached the limit
+		if (iteration < maxIterations) {
+			GetGame().GetCallQueue(CALL_CATEGORY_GUI).CallLater(this.CollapseAllFoldersAggressively, 50, 0, iteration, maxIterations); // Small 50ms delay for UI processing
+		} else {
+		}
+	}
+	
+
+	void RefreshVirtualFolders()
+	{
+		// Refresh contents and hide newly virtualized items efficiently
+		
+		// Clear any stale selection to prevent crashes
+		ClearSelection();
+		
+		// Suppress folder collapse during refresh
+		m_SuppressFolderCollapse = true;
+		
+		// Refresh virtual folder contents to show new/removed items
+		foreach (EditorVirtualFolderListNode folderNode: m_VirtualFolderNodes)
+		{
+			if (folderNode)
+			{
+				folderNode.RefreshContents();
+			}
+		}
+		
+		// Hide newly virtualized items (but only scan items that are in virtual folders now)
+		HideNewlyVirtualizedItems();
+		
+		// Re-enable folder collapse
+		m_SuppressFolderCollapse = false;
+	}
+	
+	void HideNewlyVirtualizedItems()
+	{
+		// Use existing hiding logic but don't process ALL items - just the ones in virtual folders
+		EditorVirtualFolderManager folderManager = EditorVirtualFolderManager.GetInstance();
+		array<ref EditorPlaceableItem> allPlaceableObjects = m_Editor.GetPlaceableObjects();
+		
+		// Create a smaller list of just items that are in virtual folders
+		array<ref EditorPlaceableItem> virtualizedItems = new array<ref EditorPlaceableItem>();
+		foreach (EditorPlaceableItem placeableItem: allPlaceableObjects)
+		{
+			string virtualFolderName = folderManager.GetItemFolder(placeableItem);
+			if (virtualFolderName != string.Empty)
+			{
+				virtualizedItems.Insert(placeableItem);
+			}
+		}
+		
+		
+		// Now hide only the virtualized items - this should be much faster
+		foreach (EditorPlaceableItem virtualizedItem: virtualizedItems)
+		{
+			HideOriginalItemNode(virtualizedItem);
+		}
+	}
+	
+	void RefreshVirtualFoldersWithHiding()
+	{
+		// Use this only when we actually need to hide/restore items
+		EditorLog.Info("RefreshVirtualFoldersWithHiding called - using full refresh");
+		
+		// Clear any stale selection to prevent crashes
+		ClearSelection();
+		
+		// Suppress folder collapse during refresh
+		m_SuppressFolderCollapse = true;
+		
+		// Do full refresh with hiding
+		HideVirtualizedItems();
+		
+		// Refresh virtual folder contents
+		foreach (EditorVirtualFolderListNode folderNode: m_VirtualFolderNodes)
+		{
+			if (folderNode)
+				folderNode.RefreshContents();
+		}
+		
+		// Re-enable folder collapse
+		m_SuppressFolderCollapse = false;
+	}
+	
+	void RestoreSpecificRemovedItems()
+	{
+		EditorVirtualFolderManager folderManager = EditorVirtualFolderManager.GetInstance();
+		array<ref EditorPlaceableItem> allPlaceableObjects = m_Editor.GetPlaceableObjects();
+		
+		bool needsFullRebuild = false;
+		array<ref EditorPlaceableItem> modelItemsToRestore = new array<ref EditorPlaceableItem>();
+		
+		// First pass: check what needs restoration and if we need full rebuild
+		foreach (EditorPlaceableItem placeableItem: allPlaceableObjects)
+		{
+			string virtualFolderName = folderManager.GetItemFolder(placeableItem);
+			// If item is NOT in any virtual folder, ensure it exists in the original tree
+			if (virtualFolderName == string.Empty)
+			{
+				bool itemExists = CheckIfItemExistsInTree(placeableItem);
+				if (!itemExists)
+				{
+					// Check if this is a class-based item that would need full rebuild
+					string model_name = placeableItem.GetModelName();
+					if (!model_name || model_name == "bmp" || model_name == "bmp.p3d" || model_name.Length() == 0)
+					{
+						// This is a class-based item, we need full rebuild
+						needsFullRebuild = true;
+						break;
+					}
+					else
+					{
+						// This is a model-based item, we can restore it individually
+						modelItemsToRestore.Insert(placeableItem);
+					}
+				}
+			}
+		}
+		
+		if (needsFullRebuild)
+		{
+			EditorLog.Info("Class-based items detected, triggering full rebuild");
+			RefreshVirtualFoldersWithReload();
+			return;
+		}
+		
+		// Second pass: restore model-based items individually
+		foreach (EditorPlaceableItem modelItem: modelItemsToRestore)
+		{
+			RestoreSpecificModelItem(modelItem);
+		}
+	}
+	
+	bool CheckIfItemExistsInTree(EditorPlaceableItem item)
+	{
+		// For model-based items, check m_FolderNodes
+		string model_name = item.GetModelName();
+		if (model_name && model_name != "bmp" && model_name != "bmp.p3d" && model_name.Length() > 0)
+		{
+			model_name.Replace(SystemPath.SEPERATOR_ALT, SystemPath.SEPERATOR);
+			model_name.ToLower();
+			model_name.TrimInPlace();
+			
+			if (model_name[0] == SystemPath.SEPERATOR) {
+				model_name = model_name.Substring(1, model_name.Length() - 1);
+			}
+			
+			return m_FolderNodes.Contains(model_name);
+		}
+		
+		// For class-based items, check if they exist in searchable nodes
+		string itemTypeLower = item.Type;
+		itemTypeLower.ToLower();
+		
+		foreach (EditorListNode searchableNode: m_SearchableListNodes)
+		{
+			EditorPlaceableListNode searchablePlaceableNode = EditorPlaceableListNode.Cast(searchableNode);
+			if (searchablePlaceableNode)
+			{
+				EditorListNode itemNodeParent = searchablePlaceableNode.GetListParent();
+				bool isInVirtualFolder = (itemNodeParent && itemNodeParent.IsInherited(EditorVirtualFolderListNode));
+				
+				if (!isInVirtualFolder && searchablePlaceableNode.FilterType(itemTypeLower, false))
+				{
+					return true;
+				}
+			}
+		}
+		
+		return false;
+	}
+	
+	void RestoreSpecificModelItem(EditorPlaceableItem item)
+	{
+		// Item doesn't exist in tree, need to restore it (model-based items only)
+		EditorLog.Info("Restoring missing model item: " + item.Type);
+		
+		string model_name = item.GetModelName();
+		model_name.Replace(SystemPath.SEPERATOR_ALT, SystemPath.SEPERATOR);
+		model_name.ToLower();
+		model_name.TrimInPlace();
+		
+		if (model_name[0] == SystemPath.SEPERATOR) {
+			model_name = model_name.Substring(1, model_name.Length() - 1);
+		}
+		
+		// Create the item node
+		EditorPlaceableListNode placeable_node = new EditorPlaceableListNode(item);
+		m_FolderNodes[model_name] = placeable_node;
+		
+		// Find or create the parent folder
+		string model_directory = model_name.Substring(0, model_name.LastIndexOf(SystemPath.SEPERATOR));
+		
+		// Ensure parent folder exists
+		if (!m_FolderNodes.Contains(model_directory))
+		{
+			CreateMissingFolderPath(model_directory);
+		}
+		
+		// Add item to parent folder
+		EditorListNode parentNode = m_FolderNodes[model_directory];
+		if (parentNode)
+		{
+			parentNode.InsertChild(placeable_node);
+		}
+		
+		// Add to searchable list
+		m_SearchableListNodes.Insert(placeable_node);
+		
+		// Add to depth tracking
+		array<string> model_path_split = {};
+		model_name.Split(SystemPath.SEPERATOR, model_path_split);
+		int depth = model_path_split.Count() - 1;
+		
+		if (!m_FolderNodesByDepth[depth]) {
+			m_FolderNodesByDepth[depth] = {};
+		}	
+		
+		m_FolderNodesByDepth[depth].Insert(placeable_node);
+	}
+	
+	void CreateMissingFolderPath(string folderPath)
+	{
+		// Split the path and ensure all parent folders exist
+		array<string> path_parts = {};
+		folderPath.Split(SystemPath.SEPERATOR, path_parts);
+		
+		for (int i = 0; i < path_parts.Count(); i++)
+		{
+			string current_path = string.Empty;
+			for (int j = 0; j <= i; j++) {
+				current_path += path_parts[j];
+				if (j != i) {
+					current_path += SystemPath.SEPERATOR;
+				}
+			}
+			
+			// If this folder doesn't exist, create it
+			if (!m_FolderNodes.Contains(current_path))
+			{
+				EditorLog.Info("Creating missing folder: " + current_path);
+				
+				EditorFolderListNode folder_node = new EditorFolderListNode(path_parts[i]);
+				m_FolderNodes[current_path] = folder_node;
+				
+				if (!m_FolderNodesByDepth[i]) {
+					m_FolderNodesByDepth[i] = {};
+				}
+				
+				m_FolderNodesByDepth[i].Insert(folder_node);
+				
+				// Add to parent or root
+				if (i == 0) {
+					m_TemplateController.LeftContent.Insert(folder_node);
+				} else {
+					string parent_path = current_path.Substring(0, current_path.LastIndexOf(SystemPath.SEPERATOR));
+					EditorFolderListNode parent_node = m_FolderNodes[parent_path];
+					if (parent_node) {
+						parent_node.InsertChild(folder_node);
+					}
+				}
+			}
+		}
+	}
+	
+	void RestoreItemsRemovedFromVirtualFolders()
+	{
+		// Simple but effective approach: check if any items need restoration
+		// and if so, trigger a full reload to ensure everything is properly restored
+		EditorVirtualFolderManager folderManager = EditorVirtualFolderManager.GetInstance();
+		array<ref EditorPlaceableItem> allPlaceableObjects = m_Editor.GetPlaceableObjects();
+		
+		bool needsReload = false;
+		
+		foreach (EditorPlaceableItem placeableItem: allPlaceableObjects)
+		{
+			string virtualFolderName = folderManager.GetItemFolder(placeableItem);
+			// If item is NOT in any virtual folder, check if it exists in the tree
+			if (virtualFolderName == string.Empty)
+			{
+				bool itemExists = false;
+				
+				// Check model-based items
+				string model_name = placeableItem.GetModelName();
+				if (model_name && model_name != "bmp" && model_name != "bmp.p3d")
+				{
+					itemExists = m_FolderNodes.Contains(model_name);
+				}
+				else
+				{
+					// Check class-based items in searchable nodes
+					string itemTypeLower = placeableItem.Type;
+					itemTypeLower.ToLower();
+					
+					foreach (EditorListNode searchableNode: m_SearchableListNodes)
+					{
+						EditorPlaceableListNode searchablePlaceableNode = EditorPlaceableListNode.Cast(searchableNode);
+						if (searchablePlaceableNode)
+						{
+							EditorListNode itemNodeParent = searchablePlaceableNode.GetListParent();
+							bool isInVirtualFolder = (itemNodeParent && itemNodeParent.IsInherited(EditorVirtualFolderListNode));
+							
+							if (!isInVirtualFolder && searchablePlaceableNode.FilterType(itemTypeLower, false))
+							{
+								itemExists = true;
+								break;
+							}
+						}
+					}
+				}
+				
+				// If item doesn't exist in the tree but should, we need a reload
+				if (!itemExists)
+				{
+					needsReload = true;
+					break;
+				}
+			}
+		}
+		
+		if (needsReload)
+		{
+			EditorLog.Info("Items removed from virtual folders detected, triggering full reload to restore them");
+			// Clear selection first to prevent issues
+			ClearSelection();
+			// Do a full reload which will rebuild the entire tree structure
+			LoadVirtualFolders();
+			// Stop here since LoadVirtualFolders already handles everything
+			m_SuppressFolderCollapse = false;
+			return;
+		}
+	}
+	
+	void HideVirtualizedItems()
+	{
+		EditorVirtualFolderManager folderManager = EditorVirtualFolderManager.GetInstance();
+		
+		// Get all virtualized items first (more efficient than checking each item individually)
+		array<ref EditorPlaceableItem> virtualizedItems = new array<ref EditorPlaceableItem>();
+		array<ref EditorPlaceableItem> allPlaceableObjects = m_Editor.GetPlaceableObjects();
+		
+		foreach (EditorPlaceableItem placeableItem: allPlaceableObjects)
+		{
+			string virtualFolderName = folderManager.GetItemFolder(placeableItem);
+			if (virtualFolderName != string.Empty)
+			{
+				virtualizedItems.Insert(placeableItem);
+			}
+		}
+		
+		// Now hide only the virtualized items
+		foreach (EditorPlaceableItem virtualizedItem: virtualizedItems)
+		{
+			HideOriginalItemNode(virtualizedItem);
+		}
+	}
+	
+	void HideOriginalItemNode(EditorPlaceableItem item)
+	{
+		// Determine HOW this item is classified in virtual folders
+		EditorVirtualFolderManager folderManager = EditorVirtualFolderManager.GetInstance();
+		string virtualFolderName = folderManager.GetItemFolder(item);
+		if (virtualFolderName == string.Empty)
+		{
+			EditorLog.Warning("Item not in any virtual folder, shouldn't be hiding: " + item.Type);
+			return;
+		}
+		
+		EditorVirtualFolderData folderData = folderManager.GetFolder(virtualFolderName);
+		if (!folderData)
+		{
+			EditorLog.Warning("Could not find virtual folder data: " + virtualFolderName);
+			return;
+		}
+		
+		int hiddenCount = 0;
+		
+		// Determine the classification type and hide only the matching type
+		bool isClassNameMatch = folderData.ContainsClassName(item.Type);
+		bool isModelPathMatch = folderData.ContainsModelPath(item.GetModelName());
+		bool isRootFolderMatch = folderData.ContainsItemByData(item.Type, item.GetModelName(), item.Path) && !isClassNameMatch && !isModelPathMatch;
+		
+		// Only hide model-based items if it was added as a ModelPath
+		if (isModelPathMatch && !isClassNameMatch)
+		{
+			string model_name = item.GetModelName();
+			if (model_name)
+			{
+				model_name.Replace(SystemPath.SEPERATOR_ALT, SystemPath.SEPERATOR);
+				model_name.ToLower();
+				model_name.TrimInPlace();
+				
+				if (model_name.Length() > 0 && model_name[0] == SystemPath.SEPERATOR) {
+					model_name = model_name.Substring(1, model_name.Length() - 1);
+				}
+				
+				if (model_name != "" && model_name != "bmp" && model_name != "bmp.p3d")
+				{
+					if (m_FolderNodes.Contains(model_name))
+					{
+						EditorListNode node = m_FolderNodes.Get(model_name);
+						EditorPlaceableListNode placeableNode = EditorPlaceableListNode.Cast(node);
+						if (placeableNode)
+						{
+							EditorListNode parentNode = placeableNode.GetListParent();
+							if (parentNode)
+							{
+								parentNode.ChildrenItems.RemoveItem(placeableNode);
+							}
+							placeableNode.GetLayoutRoot().Unlink();
+							m_SearchableListNodes.RemoveItem(placeableNode);
+							m_FolderNodes.Remove(model_name);
+							
+							hiddenCount++;
+						}
+					}
+				}
+			}
+		}
+		
+		// Only hide class-based items if it was added as a ClassName
+		if (isClassNameMatch && !isModelPathMatch)
+		{
+			EditorListNode classNodeToRemove = null;
+			
+			foreach (EditorListNode searchableNode: m_SearchableListNodes)
+			{
+				EditorPlaceableListNode searchablePlaceableNode = EditorPlaceableListNode.Cast(searchableNode);
+				if (searchablePlaceableNode)
+				{
+					EditorListNode itemNodeParent = searchablePlaceableNode.GetListParent();
+					bool isInVirtualFolder = (itemNodeParent && itemNodeParent.IsInherited(EditorVirtualFolderListNode));
+					
+					string itemTypeLower = item.Type;
+					itemTypeLower.ToLower();
+					if (!isInVirtualFolder && searchablePlaceableNode.FilterType(itemTypeLower, false))
+					{
+						classNodeToRemove = searchableNode;
+						break;
+					}
+				}
+			}
+			
+			if (classNodeToRemove)
+			{
+				EditorPlaceableListNode removeablePlaceableNode = EditorPlaceableListNode.Cast(classNodeToRemove);
+				if (removeablePlaceableNode)
+				{
+					EditorListNode removeableParentNode = removeablePlaceableNode.GetListParent();
+					if (removeableParentNode)
+					{
+						removeableParentNode.ChildrenItems.RemoveItem(removeablePlaceableNode);
+					}
+					removeablePlaceableNode.GetLayoutRoot().Unlink();
+					m_SearchableListNodes.RemoveItem(removeablePlaceableNode);
+					
+					hiddenCount++;
+				}
+			}
+		}
+		
+		// Hide root folder items
+		if (isRootFolderMatch)
+		{
+			EditorListNode rootFolderNodeToRemove = null;
+			
+			foreach (EditorListNode rootFolderSearchableNode: m_SearchableListNodes)
+			{
+				EditorPlaceableListNode rootFolderPlaceableNode = EditorPlaceableListNode.Cast(rootFolderSearchableNode);
+				if (rootFolderPlaceableNode)
+				{
+					EditorListNode rootFolderItemParent = rootFolderPlaceableNode.GetListParent();
+					bool rootFolderIsInVirtualFolder = (rootFolderItemParent && rootFolderItemParent.IsInherited(EditorVirtualFolderListNode));
+					
+					// For root folder items, we match by checking if this item would be matched by the same root folder logic
+					if (!rootFolderIsInVirtualFolder)
+					{
+						string rootFolderItemType = item.Type;
+						rootFolderItemType.ToLower();
+						if (rootFolderPlaceableNode.FilterType(rootFolderItemType, false))
+						{
+							rootFolderNodeToRemove = rootFolderSearchableNode;
+							break;
+						}
+					}
+				}
+			}
+			
+			if (rootFolderNodeToRemove)
+			{
+				EditorPlaceableListNode rootFolderRemovableNode = EditorPlaceableListNode.Cast(rootFolderNodeToRemove);
+				if (rootFolderRemovableNode)
+				{
+					EditorListNode rootFolderRemovableParent = rootFolderRemovableNode.GetListParent();
+					if (rootFolderRemovableParent)
+					{
+						rootFolderRemovableParent.ChildrenItems.RemoveItem(rootFolderRemovableNode);
+					}
+					rootFolderRemovableNode.GetLayoutRoot().Unlink();
+					m_SearchableListNodes.RemoveItem(rootFolderRemovableNode);
+					
+					hiddenCount++;
+				}
+			}
+		}
+	}
+	
+	void ClearSelection()
+	{
+		// Clear any selected node to prevent stale references after widget unlinking
+		if (EditorListNode.s_SelectedNode)
+		{
+			EditorListNode.s_SelectedNode.Panel.SetColor(0);
+			EditorListNode.s_SelectedNode = null;
+		}
+	}
+	
+	void RefreshVirtualFoldersWithReload()
+	{
+		// Clear any stale selection to prevent crashes
+		ClearSelection();
+		
+		// Use this for major changes that require full reload (like new folder creation)
+		LoadVirtualFolders();
+	}
+	
+	
+	
+	bool IsFolderCollapseSupressed()
+	{
+		return m_SuppressFolderCollapse;
+	}
+
+	void AddToSearchableNodes(EditorListNode node)
+	{
+		if (node && m_SearchableListNodes)
+		{
+			m_SearchableListNodes.Insert(node);
+		}
+	}
+	
+	void RemoveFromSearchableNodes(EditorListNode node)
+	{
+		if (node && m_SearchableListNodes)
+		{
+			m_SearchableListNodes.RemoveItem(node);
+		}
+	}
+	
+	void RestoreOriginalItemNode(EditorPlaceableItem item)
+	{
+		// Re-add the item to its original location in the folder tree
+		string model_name = item.GetModelName();
+		if (!model_name || model_name == "bmp" || model_name == "bmp.p3d")
+			return;
+			
+		// Check if it's already been restored
+		if (m_FolderNodes.Contains(model_name))
+			return;
+		
+		// Create new placeable node
+		EditorPlaceableListNode placeable_node = new EditorPlaceableListNode(item);
+		m_FolderNodes[model_name] = placeable_node;
+		
+		// Find parent folder and add as child
+		string model_directory = model_name.Substring(0, model_name.LastIndexOf(SystemPath.SEPERATOR));
+		if (m_FolderNodes.Contains(model_directory))
+		{
+			EditorListNode parentNode = m_FolderNodes[model_directory];
+			parentNode.InsertChild(placeable_node);
+		}
+		
+		// Add back to searchable list
+		m_SearchableListNodes.Insert(placeable_node);
 	}
 }

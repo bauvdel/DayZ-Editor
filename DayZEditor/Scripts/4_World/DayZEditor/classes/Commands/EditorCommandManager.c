@@ -31,6 +31,12 @@ class EditorCommandManager
 	EditorCommand CameraTrackRun;
 	EditorCommand CameraToggleLight;
 	
+	// Virtual Folder Commands
+	EditorCommand AddToVirtualFolderCommand;
+	EditorCommand RemoveFromVirtualFolderCommand;
+	EditorCommand DeleteVirtualFolderCommand;
+	EditorCommand AddRootFolderToVirtualCommand;
+	
 	void ~EditorCommandManager()
 	{		
 		delete m_Commands;
@@ -81,6 +87,12 @@ class EditorCommandManager
 		RegisterCommand(EditorAddToFavoritesCommand);
 		RegisterCommand(EditorRemoveFromFavoritesCommand);
 		RegisterCommand(EditorPlaceObjectCommand);
+		
+		// Virtual Folder Commands
+		AddToVirtualFolderCommand = RegisterCommand(EditorAddToVirtualFolderCommand);
+		RemoveFromVirtualFolderCommand = RegisterCommand(EditorRemoveFromVirtualFolderCommand);
+		DeleteVirtualFolderCommand = RegisterCommand(EditorDeleteVirtualFolderCommand);
+		AddRootFolderToVirtualCommand = RegisterCommand(EditorAddRootFolderToVirtualCommand);
 	
 		RegisterCommand(EditorBrushPropertiesCommand);
 		BrushToggleCommand = RegisterCommand(EditorBrushToggleCommand);
@@ -153,7 +165,7 @@ class EditorCommandManager
 			return null;
 		}
 		
-		this[command_type] = command;
+		m_Commands.Insert(command_type, command);
 		
 		if (command.GetShortcut()) {
 			m_CommandShortcutMap.Insert(command.GetShortcut().GetMask(), command);
