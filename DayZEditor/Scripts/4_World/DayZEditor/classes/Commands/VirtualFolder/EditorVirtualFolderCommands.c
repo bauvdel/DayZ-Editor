@@ -107,21 +107,37 @@ class EditorRemoveFromVirtualFolderCommand: EditorCommand
             return true;
         }
             
-        string folderName = EditorVirtualFolderManager.GetInstance().GetItemFolder(m_PlaceableItem);
+        EditorVirtualFolderManager manager = EditorVirtualFolderManager.GetInstance();
+        string folderName = manager.GetItemFolder(m_PlaceableItem);
         if (folderName == string.Empty)
         {
             EditorLog.Warning("Item is not in any virtual folder");
             return true;
         }
         
-        if (EditorVirtualFolderManager.GetInstance().RemoveItemFromFolder(m_PlaceableItem))
+        // Check if this item belongs to a root folder
+        string rootFolderPath = manager.GetItemRootFolder(m_PlaceableItem, folderName);
+        if (rootFolderPath != string.Empty)
         {
-            // When removing items, we need full reload to restore them to original locations
-            GetEditor().GetEditorHud().RefreshVirtualFoldersWithReload();
+            // Item belongs to a root folder - show special dialog
+            EditorRemoveRootFolderFromVirtualDialog dialog = new EditorRemoveRootFolderFromVirtualDialog("Remove Root Folder", m_PlaceableItem, folderName, rootFolderPath);
+            
+            if (!dialog)
+            {
+                EditorLog.Error("Root folder removal dialog creation failed");
+            }
         }
         else
         {
-            EditorLog.Error("Failed to remove item from virtual folder");
+            // Item was individually added - remove normally
+            if (manager.RemoveItemFromFolder(m_PlaceableItem))
+            {
+                GetEditor().GetEditorHud().RefreshVirtualFoldersWithReload();
+            }
+            else
+            {
+                EditorLog.Error("Failed to remove item from virtual folder");
+            }
         }
         
         return true;
@@ -129,7 +145,7 @@ class EditorRemoveFromVirtualFolderCommand: EditorCommand
     
     override string GetName()
     {
-        return "Remove from Virtual Folder";
+        return "Remove from Folder";
     }
     
     override string GetIcon()
@@ -180,7 +196,6 @@ class EditorAddRootFolderToVirtualCommand: EditorCommand
         
         if (!folderNode)
         {
-            EditorLog.Warning("No folder node provided to AddRootFolderToVirtualCommand");
             return true;
         }
         
@@ -209,7 +224,6 @@ class EditorAddRootFolderToVirtualCommand: EditorCommand
             {
                 if (vfData.RootFolders.Find(folderName) != -1)
                 {
-                    EditorLog.Warning("Root folder already assigned: " + folderName + " in " + vfName);
                     return true;
                 }
             }

@@ -206,4 +206,69 @@ class EditorVirtualFolderManager
             
         return AddItemToFolder(placeableItem, m_LastUsedFolder, addType);
     }
+    
+    EditorVirtualFolderConfig GetConfig()
+    {
+        return m_Config;
+    }
+    
+    string GetItemRootFolder(EditorPlaceableItem placeableItem, string virtualFolderName)
+    {
+        if (!placeableItem || virtualFolderName == string.Empty)
+            return string.Empty;
+            
+        EditorVirtualFolderData folderData = GetFolder(virtualFolderName);
+        if (!folderData)
+            return string.Empty;
+            
+        string itemType = placeableItem.Type;
+        string modelPath = placeableItem.GetModelName();
+        string itemPath = placeableItem.Path;
+        
+        // Check each root folder to see if this item matches
+        foreach (string rootFolder: folderData.RootFolders)
+        {
+            string normalizedRootFolder = rootFolder;
+            normalizedRootFolder.ToLower();
+            normalizedRootFolder.Replace("\\", "/");
+            
+            string backslashRootFolder = normalizedRootFolder;
+            backslashRootFolder.Replace("/", "\\");
+            
+            // Check itemPath
+            if (itemPath != string.Empty)
+            {
+                string lowerItemPath = itemPath;
+                lowerItemPath.ToLower();
+                if (lowerItemPath.Contains(normalizedRootFolder) || lowerItemPath.Contains(backslashRootFolder))
+                {
+                    return rootFolder;
+                }
+            }
+            
+            // Check modelPath
+            if (modelPath != string.Empty)
+            {
+                string lowerModelPath = modelPath;
+                lowerModelPath.ToLower();
+                if (lowerModelPath.Contains(normalizedRootFolder) || lowerModelPath.Contains(backslashRootFolder))
+                {
+                    return rootFolder;
+                }
+            }
+            
+            // Check itemType
+            if (itemType != string.Empty)
+            {
+                string lowerItemType = itemType;
+                lowerItemType.ToLower();
+                if (lowerItemType.Contains(normalizedRootFolder) || lowerItemType.Contains(backslashRootFolder))
+                {
+                    return rootFolder;
+                }
+            }
+        }
+        
+        return string.Empty;
+    }
 }
