@@ -6,22 +6,21 @@ class EditorQuickAddToVirtualFolderCommand: EditorCommand
         
         EditorPlaceableItem m_PlaceableItem = null;
         
-        // Try to get from context menu data first
-        Param1<EditorPlaceableItem> p1 = Param1<EditorPlaceableItem>.Cast(GetData());
-        if (p1) {
-            m_PlaceableItem = p1.param1;
+        if (EditorListNode.s_SelectedNode && EditorListNode.s_SelectedNode.IsInherited(EditorPlaceableListNode))
+        {
+            EditorPlaceableListNode placeableNode = EditorPlaceableListNode.Cast(EditorListNode.s_SelectedNode);
+            if (placeableNode)
+            {
+                m_PlaceableItem = placeableNode.GetPlaceableItem();
+            }
         }
         
-        // If no context menu data, try to get from selected node
-        if (!m_PlaceableItem && EditorListNode.s_SelectedNode)
+        // Only use context menu data if there's no UI selection (for context menus)
+        if (!m_PlaceableItem)
         {
-            if (EditorListNode.s_SelectedNode.IsInherited(EditorPlaceableListNode))
-            {
-                EditorPlaceableListNode placeableNode = EditorPlaceableListNode.Cast(EditorListNode.s_SelectedNode);
-                if (placeableNode)
-                {
-                    m_PlaceableItem = placeableNode.GetPlaceableItem();
-                }
+            Param1<EditorPlaceableItem> p1 = Param1<EditorPlaceableItem>.Cast(GetData());
+            if (p1) {
+                m_PlaceableItem = p1.param1;
             }
         }
         
@@ -60,7 +59,14 @@ class EditorQuickAddToVirtualFolderCommand: EditorCommand
         string lastUsedFolder = manager.GetLastUsedFolder();
         string message;
         
-        if (manager.AddItemToLastUsedFolder(m_PlaceableItem, 0))
+        // Determine add type based on item type (same logic as EditorAddToVirtualFolderDialog)
+        int addType = 0; 
+        if (m_PlaceableItem.Type.Contains(".p3d"))
+        {
+            addType = 1;
+        }
+        
+        if (manager.AddItemToLastUsedFolder(m_PlaceableItem, addType))
         {
             // Show success notification
             if (hud)
@@ -109,15 +115,27 @@ class EditorQuickAddToVirtualFolderCommand: EditorCommand
     
     override bool CanExecute()
     {
-        // Check if theres a last used folder and a selected placeable item
+        // Check if theres a last used folder
         EditorVirtualFolderManager manager = EditorVirtualFolderManager.GetInstance();
         if (!manager.HasLastUsedFolder())
             return false;
-            
-        // Check if theres a selected placeable node
+        
+        // For keyboard shortcuts, always prioritize the UI selection over context data
         if (EditorListNode.s_SelectedNode && EditorListNode.s_SelectedNode.IsInherited(EditorPlaceableListNode))
+        {
+            EditorPlaceableListNode placeableNode = EditorPlaceableListNode.Cast(EditorListNode.s_SelectedNode);
+            if (placeableNode && placeableNode.GetPlaceableItem())
+            {
+                return true;
+            }
+        }
+        
+        // Only use context data if there's no UI selection (for context menus)
+        Param1<EditorPlaceableItem> p1 = Param1<EditorPlaceableItem>.Cast(GetData());
+        if (p1 && p1.param1) {
             return true;
-            
+        }
+        
         return false;
     }
 }

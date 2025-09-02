@@ -170,6 +170,13 @@ class EditorHud: ScriptView
 				continue;
 			}
 			
+			// Skip items that will be in virtual folders during initial tree building
+			EditorVirtualFolderManager folderManager = EditorVirtualFolderManager.GetInstance();
+			string virtualFolderName = folderManager.GetItemFolder(placeable_item);
+			if (virtualFolderName != string.Empty) {
+				continue;
+			}
+			
 			string model_name = placeable_item.GetModelName();
 			model_name.Replace(SystemPath.SEPERATOR_ALT, SystemPath.SEPERATOR);
 			model_name.ToLower();
@@ -1591,9 +1598,7 @@ class EditorHud: ScriptView
 		// Suppress folder collapse during virtual folder operations to prevent slowdown
 		m_SuppressFolderCollapse = true;
 		
-		// Always rebuild the base folder tree to ensure virtual folder hiding logic is applied
-		// The rebuild process now properly skips virtualized items
-		RebuildBaseFolderTree();
+		// No need to rebuild - the initial tree was already built with virtual folder filtering
 		
 		// Clear existing virtual folder nodes
 		foreach (EditorVirtualFolderListNode existingNode: m_VirtualFolderNodes)
