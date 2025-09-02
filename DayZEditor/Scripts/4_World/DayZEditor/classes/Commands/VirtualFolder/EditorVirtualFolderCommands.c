@@ -103,7 +103,6 @@ class EditorRemoveFromVirtualFolderCommand: EditorCommand
         
         if (!m_PlaceableItem)
         {
-            EditorLog.Warning("No placeable item selected for RemoveFromVirtualFolderCommand");
             return true;
         }
             
@@ -111,7 +110,6 @@ class EditorRemoveFromVirtualFolderCommand: EditorCommand
         string folderName = manager.GetItemFolder(m_PlaceableItem);
         if (folderName == string.Empty)
         {
-            EditorLog.Warning("Item is not in any virtual folder");
             return true;
         }
         
@@ -130,13 +128,31 @@ class EditorRemoveFromVirtualFolderCommand: EditorCommand
         else
         {
             // Item was individually added - remove normally
+            EditorHud hud = GetEditor().GetEditorHud();
+            string message;
+            
             if (manager.RemoveItemFromFolder(m_PlaceableItem))
             {
-                GetEditor().GetEditorHud().RefreshVirtualFoldersWithReload();
+                // Show success notification
+                if (hud)
+                {
+                    message = "Removed '" + m_PlaceableItem.Name + "' from '" + folderName + "'";
+                    hud.CreateNotification(message);
+                }
+                
+                if (!manager.IsBatchMode())
+                {
+                    GetEditor().GetEditorHud().RefreshVirtualFoldersWithReload();
+                }
             }
             else
             {
-                EditorLog.Error("Failed to remove item from virtual folder");
+                // Show error notification
+                if (hud)
+                {
+                    message = "Failed to remove '" + m_PlaceableItem.Name + "' from virtual folder";
+                    hud.CreateNotification(message);
+                }
             }
         }
         

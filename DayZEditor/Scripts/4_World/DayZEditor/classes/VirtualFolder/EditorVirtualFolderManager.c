@@ -3,6 +3,7 @@ class EditorVirtualFolderManager
     protected static ref EditorVirtualFolderManager s_Instance;
     protected ref EditorVirtualFolderConfig m_Config;
     protected string m_LastUsedFolder;
+    protected bool m_BatchMode;
     
     void EditorVirtualFolderManager()
     {
@@ -270,5 +271,27 @@ class EditorVirtualFolderManager
         }
         
         return string.Empty;
+    }
+    
+    bool IsBatchMode()
+    {
+        return m_BatchMode;
+    }
+    
+    void SetBatchMode(bool enabled)
+    {
+        bool wasEnabled = m_BatchMode;
+        m_BatchMode = enabled;
+        
+        // If we're turning off batch mode, do a full refresh
+        if (wasEnabled && !enabled)
+        {
+            GetEditor().GetEditorHud().RefreshVirtualFoldersWithReload();
+        }
+    }
+    
+    void ToggleBatchMode()
+    {
+        SetBatchMode(!m_BatchMode);
     }
 }

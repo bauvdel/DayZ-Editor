@@ -57,29 +57,46 @@ class EditorAddToVirtualFolderDialog: EditorDialogBase
                 bool newFolderCreated = EditorVirtualFolderManager.GetInstance().CreateFolder(folderName);
                 
                 // Add as Class item or Model item based on type
+                bool addSuccess = false;
                 if (m_PlaceableItem.Type.Contains(".p3d"))
                 {
-                    EditorVirtualFolderManager.GetInstance().AddItemToFolder(m_PlaceableItem, folderName, 1);
+                    addSuccess = EditorVirtualFolderManager.GetInstance().AddItemToFolder(m_PlaceableItem, folderName, 1);
                 }
                 else
                 {
-                    EditorVirtualFolderManager.GetInstance().AddItemToFolder(m_PlaceableItem, folderName, 0);
+                    addSuccess = EditorVirtualFolderManager.GetInstance().AddItemToFolder(m_PlaceableItem, folderName, 0);
                 }
                 
-                // Refresh UI
+                // Refresh UI and show notification
                 Editor editor = GetEditor();
                 if (editor)
                 {
                     EditorHud hud = editor.GetEditorHud();
                     if (hud)
                     {
-                        if (newFolderCreated)
+                        // Show notification
+                        string message;
+                        if (addSuccess)
                         {
-                            hud.RefreshVirtualFoldersWithReload();
+                            message = "Added '" + m_PlaceableItem.Name + "' to '" + folderName + "'";
                         }
                         else
                         {
-                            hud.RefreshVirtualFolders();
+                            message = "Failed to add '" + m_PlaceableItem.Name + "' to '" + folderName + "'";
+                        }
+                        hud.CreateNotification(message);
+                        
+                        EditorVirtualFolderManager manager = EditorVirtualFolderManager.GetInstance();
+                        if (!manager.IsBatchMode())
+                        {
+                            if (newFolderCreated)
+                            {
+                                hud.RefreshVirtualFoldersWithReload();
+                            }
+                            else
+                            {
+                                hud.RefreshVirtualFolders();
+                            }
                         }
                     }
                 }

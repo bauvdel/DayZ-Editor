@@ -921,6 +921,7 @@ class EditorHud: ScriptView
 				break;
 			}
 		}
+		
 
 		return super.OnClick(w, x, y, button);
 	}
@@ -2044,6 +2045,7 @@ class EditorHud: ScriptView
 		{
 			HideOriginalItemNode(virtualizedItem);
 		}
+		
 	}
 	
 	void RefreshVirtualFoldersWithHiding()
@@ -2562,4 +2564,5 @@ class EditorHud: ScriptView
 		// Add back to searchable list
 		m_SearchableListNodes.Insert(placeable_node);
 	}
+	
 }

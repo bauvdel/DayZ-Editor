@@ -37,6 +37,7 @@ class EditorCommandManager
 	EditorCommand DeleteVirtualFolderCommand;
 	EditorCommand AddRootFolderToVirtualCommand;
 	EditorCommand QuickAddToVirtualFolderCommand;
+	EditorCommand ToggleBatchModeCommand;
 	
 	void ~EditorCommandManager()
 	{		
@@ -95,6 +96,7 @@ class EditorCommandManager
 		DeleteVirtualFolderCommand = RegisterCommand(EditorDeleteVirtualFolderCommand);
 		AddRootFolderToVirtualCommand = RegisterCommand(EditorAddRootFolderToVirtualCommand);
 		QuickAddToVirtualFolderCommand = RegisterCommand(EditorQuickAddToVirtualFolderCommand);
+		ToggleBatchModeCommand = RegisterCommand(EditorToggleBatchModeCommand);
 	
 		RegisterCommand(EditorBrushPropertiesCommand);
 		BrushToggleCommand = RegisterCommand(EditorBrushToggleCommand);

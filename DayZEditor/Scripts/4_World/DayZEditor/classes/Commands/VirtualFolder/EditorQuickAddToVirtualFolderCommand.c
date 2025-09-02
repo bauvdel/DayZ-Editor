@@ -25,24 +25,63 @@ class EditorQuickAddToVirtualFolderCommand: EditorCommand
             }
         }
         
+        EditorVirtualFolderManager manager = EditorVirtualFolderManager.GetInstance();
+        EditorHud hud = GetEditor().GetEditorHud();
+        
         if (!m_PlaceableItem)
         {
+            if (hud)
+            {
+                if (!EditorListNode.s_SelectedNode)
+                {
+                    hud.CreateNotification("Quick Add: No item selected");
+                }
+                else if (!EditorListNode.s_SelectedNode.IsInherited(EditorPlaceableListNode))
+                {
+                    hud.CreateNotification("Quick Add: Selected item is not placeable (" + EditorListNode.s_SelectedNode.ClassName() + ")");
+                }
+                else
+                {
+                    hud.CreateNotification("Quick Add: Could not get placeable item from selected node");
+                }
+            }
             return true;
         }
         
-        EditorVirtualFolderManager manager = EditorVirtualFolderManager.GetInstance();
         if (!manager.HasLastUsedFolder())
         {
+            if (hud)
+            {
+                hud.CreateNotification("Quick Add: No last used folder available");
+            }
             return true;
         }
+        
+        string lastUsedFolder = manager.GetLastUsedFolder();
+        string message;
         
         if (manager.AddItemToLastUsedFolder(m_PlaceableItem, 0))
         {
-            GetEditor().GetEditorHud().RefreshVirtualFolders();
+            // Show success notification
+            if (hud)
+            {
+                message = "Added '" + m_PlaceableItem.Name + "' to '" + lastUsedFolder + "'";
+                hud.CreateNotification(message);
+            }
+            
+            if (!manager.IsBatchMode())
+            {
+                GetEditor().GetEditorHud().RefreshVirtualFolders();
+            }
         }
         else
         {
-            EditorLog.Error("Failed to add item to last used virtual folder");
+            // Show error notification
+            if (hud)
+            {
+                message = "Failed to add '" + m_PlaceableItem.Name + "' to virtual folder";
+                hud.CreateNotification(message);
+            }
         }
         
         return true;

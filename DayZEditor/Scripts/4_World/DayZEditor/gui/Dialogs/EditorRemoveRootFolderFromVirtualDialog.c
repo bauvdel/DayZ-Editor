@@ -39,14 +39,27 @@ class EditorRemoveRootFolderFromVirtualDialog: EditorDialogBase
             
             if (folderData)
             {
-                if (folderData.RemoveRootFolder(m_RootFolderPath))
+                bool removeSuccess = folderData.RemoveRootFolder(m_RootFolderPath);
+                if (removeSuccess)
                 {
                     manager.GetConfig().Save();
                     GetEditor().GetEditorHud().RefreshVirtualFoldersWithReload();
                 }
-                else
+                
+                // Show notification
+                EditorHud hud = GetEditor().GetEditorHud();
+                if (hud)
                 {
-                    EditorLog.Error("Failed to remove root folder from virtual folder");
+                    string message;
+                    if (removeSuccess)
+                    {
+                        message = "Removed root folder '" + m_RootFolderPath + "' from '" + m_VirtualFolderName + "'";
+                    }
+                    else
+                    {
+                        message = "Failed to remove root folder '" + m_RootFolderPath + "' from '" + m_VirtualFolderName + "'";
+                    }
+                    hud.CreateNotification(message);
                 }
             }
         }

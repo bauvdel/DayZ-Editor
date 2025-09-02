@@ -62,7 +62,7 @@ class EditorAddRootFolderToVirtualDialog: EditorDialogBase
             
             folderName = folderName.Trim();
             EditorVirtualFolderManager.GetInstance().CreateFolder(folderName);
-            EditorVirtualFolderManager.GetInstance().AddRootFolderToFolder(m_RootFolderPath, folderName);
+            bool addSuccess = EditorVirtualFolderManager.GetInstance().AddRootFolderToFolder(m_RootFolderPath, folderName);
             
             Editor editor = GetEditor();
             if (editor)
@@ -70,6 +70,18 @@ class EditorAddRootFolderToVirtualDialog: EditorDialogBase
                 EditorHud hud = editor.GetEditorHud();
                 if (hud)
                 {
+                    // Show notification
+                    string message;
+                    if (addSuccess)
+                    {
+                        message = "Added root folder '" + m_RootFolderPath + "' to '" + folderName + "'";
+                    }
+                    else
+                    {
+                        message = "Failed to add root folder '" + m_RootFolderPath + "' to '" + folderName + "'";
+                    }
+                    hud.CreateNotification(message);
+                    
                     hud.RefreshVirtualFoldersWithReload();
                 }
             }
