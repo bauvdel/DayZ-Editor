@@ -144,6 +144,7 @@ class EditorHud: ScriptView
 	protected ref array<EditorListNode> m_SearchableListNodes = {};
 	protected ref array<ref EditorVirtualFolderListNode> m_VirtualFolderNodes = {};
 	protected ref EditorFolderListNode m_VirtualFoldersRoot;
+	protected ref EditorVirtualFolderUIManager m_VirtualFolderUIManager;
 	
 	void EditorHud(notnull Editor editor)
 	{	
@@ -244,6 +245,9 @@ class EditorHud: ScriptView
 		}
 		
 		EditorLog.Info("Loaded %1 Placeable Objects", placeable_items.Count().ToString());
+		
+		// Initialize Virtual Folder UI Manager
+		m_VirtualFolderUIManager = new EditorVirtualFolderUIManager(this);
 		
 		// Load Virtual Folders
 		LoadVirtualFolders();
@@ -1078,43 +1082,17 @@ class EditorHud: ScriptView
 			for (int i = 0; i < m_SearchableListNodes.Count(); i++) {
 				bool filter_state = m_SearchableListNodes[i].FilterType("", favorite_toggle);
 				
-				// Don't call Show() on virtual folders - they handle their own visibility internally
-				if (!m_SearchableListNodes[i].IsInherited(EditorVirtualFolderListNode)) {
-					m_SearchableListNodes[i].Show(filter_state);
-					if (filter_state) {
-						GetGame().GetCallQueue(CALL_CATEGORY_GUI).CallLater(m_SearchableListNodes[i].GetListParent().SetCollapsed, 0, 0, false);
-					}
+				m_SearchableListNodes[i].Show(filter_state);
+				if (filter_state) {
+					GetGame().GetCallQueue(CALL_CATEGORY_GUI).CallLater(m_SearchableListNodes[i].GetListParent().SetCollapsed, 0, 0, false);
 				}
 			}
 			
 			// Also expand virtual folders when their items match
-			bool hasShortSearchVirtualFolderMatches = false;
-			foreach (EditorVirtualFolderListNode virtualFolderNode: m_VirtualFolderNodes) {
-				bool hasMatchingChildren = false;
-				foreach (EditorListNode childNode: virtualFolderNode.ChildrenItems) {
-					if (childNode.FilterType("", favorite_toggle)) {
-						hasMatchingChildren = true;
-						break;
-					}
-				}
-				if (hasMatchingChildren) {
-					GetGame().GetCallQueue(CALL_CATEGORY_GUI).CallLater(virtualFolderNode.SetCollapsed, 0, 0, false);
-					hasShortSearchVirtualFolderMatches = true;
-				}
-			}
+			bool hasShortSearchVirtualFolderMatches = m_VirtualFolderUIManager.HasShortSearchVirtualFolderMatches(favorite_toggle);
 			
-			// Expand Virtual Folders root if any virtual folders have matches
-			if (hasShortSearchVirtualFolderMatches && m_VirtualFoldersRoot) {
-				GetGame().GetCallQueue(CALL_CATEGORY_GUI).CallLater(m_VirtualFoldersRoot.SetCollapsed, 0, 0, false);
-			} else if (hasShortSearchVirtualFolderMatches && !m_VirtualFoldersRoot) {
-				EditorLog.Warning("Virtual Folders root is null during short search expansion");
-			}
-			
-			// Collapse folders when transitioning from long search to short search or when search is cleared
-			// But only if not suppressed (e.g., during virtual folder operations)
 			if (!m_SuppressFolderCollapse && (search_string.Length() == 0 || (m_LastSearchString.Length() >= 3 && search_string.Length() < 3))) {
 				
-				// Use the same recursive approach as the working CollapseAll command
 				CollapseAllFolders();
 			}
 						
@@ -1128,24 +1106,23 @@ class EditorHud: ScriptView
 		foreach (EditorListNode list_node: m_SearchableListNodes) {
 			bool matches = list_node.FilterType(search_string, favorite_toggle);
 			
-			// Don't call Show() on virtual folders - they handle their own visibility internally
-			if (!list_node.IsInherited(EditorVirtualFolderListNode)) {
-				list_node.Show(matches);
-				
-				// Expand virtual folders if they have matching children
-				if (matches) {
-					EditorListNode matchParent = list_node.GetListParent();
-					if (matchParent && matchParent.IsInherited(EditorVirtualFolderListNode)) {
-						EditorVirtualFolderListNode virtualParent = EditorVirtualFolderListNode.Cast(matchParent);
-						if (virtualParent) {
-							virtualParent.SetCollapsed(false);
-							hasVirtualFolderMatches = true;
-						}
+			list_node.Show(matches);
+			
+			// Expand virtual folders if they have matching children
+			if (matches) {
+				EditorListNode matchParent = list_node.GetListParent();
+				if (matchParent && matchParent.IsInherited(EditorVirtualFolderListNode)) {
+					EditorVirtualFolderListNode virtualParent = EditorVirtualFolderListNode.Cast(matchParent);
+					if (virtualParent) {
+						virtualParent.SetCollapsed(false);
+						hasVirtualFolderMatches = true;
 					}
 				}
-			} else if (matches) {
-				// This is a virtual folder that has matches - track it for root expansion
-				hasVirtualFolderMatches = true;
+				
+				// Track if this is a virtual folder that has matches for root expansion
+				if (list_node.IsInherited(EditorVirtualFolderListNode)) {
+					hasVirtualFolderMatches = true;
+				}
 			}
 		}
 		
@@ -1580,6 +1557,36 @@ class EditorHud: ScriptView
 	{
 		return m_TemplateController;
 	}
+	
+	Editor GetEditor()
+	{
+		return m_Editor;
+	}
+	
+	// Simple setter for Virtual Folder UI Manager
+	void SetSuppressFolderCollapse(bool suppress)
+	{
+		m_SuppressFolderCollapse = suppress;
+	}
+	
+	// Getters for Virtual Folder UI Manager
+	ref map<string, EditorListNode> GetFolderNodes()
+	{
+		return m_FolderNodes;
+	}
+	
+	ref map<int, ref array<EditorListNode>> GetFolderNodesByDepth()
+	{
+		return m_FolderNodesByDepth;
+	}
+	
+	ref array<EditorListNode> GetSearchableListNodes()
+	{
+		return m_SearchableListNodes;
+	}
+	
+	
+	
 		
 	static bool IsPointInPolygon(float x, float y, array<vector> points)
 	{
@@ -1595,83 +1602,13 @@ class EditorHud: ScriptView
 	
 	void LoadVirtualFolders()
 	{
-		// Suppress folder collapse during virtual folder operations to prevent slowdown
-		m_SuppressFolderCollapse = true;
-		
-		// No need to rebuild - the initial tree was already built with virtual folder filtering
-		
-		// Clear existing virtual folder nodes
-		foreach (EditorVirtualFolderListNode existingNode: m_VirtualFolderNodes)
+		if (m_VirtualFolderUIManager)
 		{
-			if (existingNode)
-				existingNode.GetLayoutRoot().Unlink();
+			m_VirtualFolderUIManager.LoadVirtualFolders();
+			// Update local references to the UI Manager's data
+			m_VirtualFolderNodes = m_VirtualFolderUIManager.GetVirtualFolderNodes();
+			m_VirtualFoldersRoot = m_VirtualFolderUIManager.GetVirtualFoldersRoot();
 		}
-		m_VirtualFolderNodes.Clear();
-		
-		// Remove existing virtual folders root
-		if (m_VirtualFoldersRoot)
-		{
-			m_VirtualFoldersRoot.GetLayoutRoot().Unlink();
-			m_FolderNodes.Remove("virtual_folders_root");
-			if (m_FolderNodesByDepth[0])
-			{
-				m_FolderNodesByDepth[0].RemoveItem(m_VirtualFoldersRoot);
-			}
-			m_VirtualFoldersRoot = null;
-		}
-		
-		EditorVirtualFolderManager folderManager = EditorVirtualFolderManager.GetInstance();
-		array<string> folderNames = folderManager.GetFolderNames();
-		
-		if (folderNames.Count() == 0)
-		{
-			// Re-enable folder collapse and return if no virtual folders
-			m_SuppressFolderCollapse = false;
-			return;
-		}
-		
-		// Create Virtual Folders root node
-		m_VirtualFoldersRoot = new EditorFolderListNode("Virtual Folders");
-		m_TemplateController.LeftContent.Insert(m_VirtualFoldersRoot);
-		
-		// Add to folder depth system
-		if (!m_FolderNodesByDepth[0])
-			m_FolderNodesByDepth[0] = {};
-		m_FolderNodesByDepth[0].Insert(m_VirtualFoldersRoot);
-		m_FolderNodes["virtual_folders_root"] = m_VirtualFoldersRoot;
-		
-		// Hide original items that are now in virtual folders BEFORE creating virtual folder contents
-		HideVirtualizedItems();
-		
-		// Create individual virtual folder nodes
-		foreach (string folderName: folderNames)
-		{
-			EditorVirtualFolderData folderData = folderManager.GetFolder(folderName);
-			if (folderData)
-			{
-				EditorVirtualFolderListNode newVirtualFolderNode = new EditorVirtualFolderListNode(folderData.Name, folderData);
-				
-				m_VirtualFoldersRoot.InsertChild(newVirtualFolderNode);
-				m_VirtualFolderNodes.Insert(newVirtualFolderNode);
-				
-				// Add virtual folder itself to searchable nodes so it gets filtered during search
-				m_SearchableListNodes.Insert(newVirtualFolderNode);
-				
-				if (!m_FolderNodesByDepth[1])
-					m_FolderNodesByDepth[1] = {};
-				m_FolderNodesByDepth[1].Insert(newVirtualFolderNode);
-				
-				m_FolderNodes["virtual_folder_" + folderName] = newVirtualFolderNode;
-				
-			}
-			else
-			{
-				EditorLog.Error("Could not get folder data for: " + folderName);
-			}
-		}
-		
-		// Re-enable folder collapse after virtual folder operations are complete
-		m_SuppressFolderCollapse = false;
 	}
 	
 	void RebuildBaseFolderTree()
@@ -1773,26 +1710,37 @@ class EditorHud: ScriptView
 	
 	void CollapseAllFolders()
 	{
-		
-		// Try a different approach - use longer delays and direct calls
-		GetGame().GetCallQueue(CALL_CATEGORY_GUI).CallLater(CollapseAllFoldersDelayed, 100, 0);
+		// Start retry system to ensure all folders are collapsed
+		CollapseAllFoldersWithRetry(0, 6); // Start with attempt 0, max 5 attempts
 	}
 	
-	void CollapseAllFoldersDelayed()
-	{
-		
-		// Start the aggressive approach manually with proper iteration tracking
-		m_CollapseIteration = 0;
-		m_CollapseMaxIterations = 6; // Back to 6 attempts for completeness
-		CollapseAllFoldersAggressively(m_CollapseIteration, m_CollapseMaxIterations);
-	}
-	
-	void CollapseAllFoldersOnce()
+	void CollapseAllFoldersWithRetry(int attempt, int maxAttempts)
 	{
 		// Check if search is active - if so, don't collapse
 		string currentSearchText = LeftSearchBar.GetText();
 		if (currentSearchText.Length() > 0) {
 			return;
+		}
+		
+		if (attempt >= maxAttempts) {
+			return; // Give up after max attempts
+		}
+		
+		int foldersCollapsedThisAttempt = CollapseAllFoldersOnce();
+		
+		// If we collapsed some folders OR it's the first attempt, try again after a delay
+		if (foldersCollapsedThisAttempt > 0 || attempt < 2) {
+			GetGame().GetCallQueue(CALL_CATEGORY_GUI).CallLater(this.CollapseAllFoldersWithRetry, 75, 0, attempt + 1, maxAttempts);
+		}
+	}
+	
+	
+	int CollapseAllFoldersOnce()
+	{
+		// Check if search is active - if so, don't collapse
+		string currentSearchText = LeftSearchBar.GetText();
+		if (currentSearchText.Length() > 0) {
+			return 0;
 		}
 		
 		int foldersCollapsed = 0;
@@ -1812,8 +1760,6 @@ class EditorHud: ScriptView
 							depthFolders++;
 							foldersCollapsed++;
 						}
-						// Also recursively collapse all children
-						CollapseAllChildren(folderAtDepth);
 					}
 				}
 			}
@@ -1836,26 +1782,29 @@ class EditorHud: ScriptView
 					} else {
 						namedAlreadyCollapsed++;
 					}
-					// Also recursively collapse all children
-					CollapseAllChildren(folderNode);
 				}
 			}
 		}
 		
 		
-		// Check all virtual folders
-		foreach (EditorVirtualFolderListNode vfNode: m_VirtualFolderNodes) {
-			if (vfNode && !vfNode.IsCollapsed()) {
-				vfNode.SetCollapsed(true);
-				virtualFolders++;
+		// Check all virtual folders - but don't collapse them if they have virtual folders that should be visible
+		string searchText = LeftSearchBar.GetText();
+		bool shouldPreserveVirtualFolders = (searchText.Length() == 0 && m_VirtualFolderNodes.Count() > 0);
+		
+		if (!shouldPreserveVirtualFolders) {
+			foreach (EditorVirtualFolderListNode vfNode: m_VirtualFolderNodes) {
+				if (vfNode && !vfNode.IsCollapsed()) {
+					vfNode.SetCollapsed(true);
+					virtualFolders++;
+					foldersCollapsed++;
+				}
+			}
+			
+			// Check Virtual Folders root
+			if (m_VirtualFoldersRoot && !m_VirtualFoldersRoot.IsCollapsed()) {
+				m_VirtualFoldersRoot.SetCollapsed(true);
 				foldersCollapsed++;
 			}
-		}
-		
-		// Check Virtual Folders root
-		if (m_VirtualFoldersRoot && !m_VirtualFoldersRoot.IsCollapsed()) {
-			m_VirtualFoldersRoot.SetCollapsed(true);
-			foldersCollapsed++;
 		}
 		
 		// Check all searchable nodes for any folders we might have missed
@@ -1869,170 +1818,18 @@ class EditorHud: ScriptView
 			}
 		}
 		
+		return foldersCollapsed;
 	}
-	
-	void CollapseAllChildren(EditorListNode parentNode)
-	{
-		if (!parentNode) return;
-		
-		foreach (EditorListNode child: parentNode.ChildrenItems) {
-			if (child && child.IsInherited(EditorFolderListNode)) {
-				if (!child.IsCollapsed()) {
-					child.SetCollapsed(true);
-				}
-				// Recurse into children
-				CollapseAllChildren(child);
-			}
-		}
-	}
-	
-	void CollapseUsingCommandSystem()
-	{
-		// Check if search is active - if so, don't collapse
-		string currentSearchText = LeftSearchBar.GetText();
-		if (currentSearchText.Length() > 0) {
-			return;
-		}
-		
-		
-		int foldersProcessed = 0;
-		
-		// Try to use the EditorCollapseAllCommand approach on every folder we can find
-		for (int depth = 0; depth < m_FolderNodesByDepth.Count(); depth++) {
-			if (m_FolderNodesByDepth[depth]) {
-				foreach (EditorListNode folderAtDepth: m_FolderNodesByDepth[depth]) {
-					if (folderAtDepth && folderAtDepth.IsInherited(EditorFolderListNode)) {
-						// Use the same approach as EditorCollapseAllCommand.CollapseAll
-						ApplyCommandCollapseToFolder(folderAtDepth);
-						foldersProcessed++;
-					}
-				}
-			}
-		}
-		
-		// Also try on all named folders
-		foreach (string folderKey, EditorListNode folderNode: m_FolderNodes) {
-			if (folderNode && folderNode.IsInherited(EditorFolderListNode)) {
-				ApplyCommandCollapseToFolder(folderNode);
-				foldersProcessed++;
-			}
-		}
-		
-	}
-	
-	void ApplyCommandCollapseToFolder(EditorListNode folderNode)
-	{
-		if (!folderNode) return;
-		
-		// Use the exact same logic as EditorCollapseAllCommand.CollapseAll
-		folderNode.SetCollapsed(true);
-		
-		// The working command does NOT recursively collapse children (line 60 is commented out)
-		// So we also don't recurse here
-	}
-	
-	void CollapseAllFoldersAggressively(int iteration, int maxIterations)
-	{
-		// Check if search is active - if so, stop collapsing
-		string currentSearchText = LeftSearchBar.GetText();
-		if (currentSearchText.Length() > 0) {
-			return;
-		}
-		
-		if (iteration >= maxIterations) {
-			return;
-		}
-		
-		iteration++;
-		int foldersCollapsedThisIteration = 0;
-		
-		
-		// Check all folder nodes by depth
-		for (int depth = 0; depth < m_FolderNodesByDepth.Count(); depth++) {
-			if (m_FolderNodesByDepth[depth]) {
-				foreach (EditorListNode folderAtDepth: m_FolderNodesByDepth[depth]) {
-					if (folderAtDepth && folderAtDepth.IsInherited(EditorFolderListNode)) {
-						if (!folderAtDepth.IsCollapsed()) {
-							folderAtDepth.SetCollapsed(true);
-							foldersCollapsedThisIteration++;
-						}
-					}
-				}
-			}
-		}
-		
-		// Check all named folder nodes
-		foreach (string folderKey, EditorListNode folderNode: m_FolderNodes) {
-			if (folderNode && folderNode.IsInherited(EditorFolderListNode)) {
-				if (!folderNode.IsCollapsed()) {
-					folderNode.SetCollapsed(true);
-					foldersCollapsedThisIteration++;
-				}
-			}
-		}
-		
-		// Check all virtual folders
-		foreach (EditorVirtualFolderListNode vfNode: m_VirtualFolderNodes) {
-			if (vfNode && !vfNode.IsCollapsed()) {
-				vfNode.SetCollapsed(true);
-				foldersCollapsedThisIteration++;
-			}
-		}
-		
-		// Check Virtual Folders root
-		if (m_VirtualFoldersRoot && !m_VirtualFoldersRoot.IsCollapsed()) {
-			m_VirtualFoldersRoot.SetCollapsed(true);
-			foldersCollapsedThisIteration++;
-		}
-		
-		// Check all searchable nodes for any folders we might have missed
-		foreach (EditorListNode searchableNode: m_SearchableListNodes) {
-			if (searchableNode && searchableNode.IsInherited(EditorFolderListNode)) {
-				if (!searchableNode.IsCollapsed()) {
-					searchableNode.SetCollapsed(true);
-					foldersCollapsedThisIteration++;
-				}
-			}
-		}
-		
-		
-		// If no folders were collapsed for 2 consecutive attempts, stop early
-		if (foldersCollapsedThisIteration == 0 && iteration > 1) {
-			return;
-		}
-		
-		// Schedule next iteration if we haven't reached the limit
-		if (iteration < maxIterations) {
-			GetGame().GetCallQueue(CALL_CATEGORY_GUI).CallLater(this.CollapseAllFoldersAggressively, 50, 0, iteration, maxIterations); // Small 50ms delay for UI processing
-		} else {
-		}
-	}
-	
 
 	void RefreshVirtualFolders()
 	{
-		// Refresh contents and hide newly virtualized items efficiently
-		
-		// Clear any stale selection to prevent crashes
-		ClearSelection();
-		
-		// Suppress folder collapse during refresh
-		m_SuppressFolderCollapse = true;
-		
-		// Refresh virtual folder contents to show new/removed items
-		foreach (EditorVirtualFolderListNode folderNode: m_VirtualFolderNodes)
+		if (m_VirtualFolderUIManager)
 		{
-			if (folderNode)
-			{
-				folderNode.RefreshContents();
-			}
+			m_VirtualFolderUIManager.RefreshVirtualFolders();
+			// Update local references to the UI Manager's data
+			m_VirtualFolderNodes = m_VirtualFolderUIManager.GetVirtualFolderNodes();
+			m_VirtualFoldersRoot = m_VirtualFolderUIManager.GetVirtualFoldersRoot();
 		}
-		
-		// Hide newly virtualized items (but only scan items that are in virtual folders now)
-		HideNewlyVirtualizedItems();
-		
-		// Re-enable folder collapse
-		m_SuppressFolderCollapse = false;
 	}
 	
 	void HideNewlyVirtualizedItems()
@@ -2063,27 +1860,13 @@ class EditorHud: ScriptView
 	
 	void RefreshVirtualFoldersWithHiding()
 	{
-		// Use this only when we actually need to hide/restore items
-		EditorLog.Info("RefreshVirtualFoldersWithHiding called - using full refresh");
-		
-		// Clear any stale selection to prevent crashes
-		ClearSelection();
-		
-		// Suppress folder collapse during refresh
-		m_SuppressFolderCollapse = true;
-		
-		// Do full refresh with hiding
-		HideVirtualizedItems();
-		
-		// Refresh virtual folder contents
-		foreach (EditorVirtualFolderListNode folderNode: m_VirtualFolderNodes)
+		if (m_VirtualFolderUIManager)
 		{
-			if (folderNode)
-				folderNode.RefreshContents();
+			m_VirtualFolderUIManager.RefreshVirtualFoldersWithHiding();
+			// Update local references to the UI Manager's data
+			m_VirtualFolderNodes = m_VirtualFolderUIManager.GetVirtualFolderNodes();
+			m_VirtualFoldersRoot = m_VirtualFolderUIManager.GetVirtualFoldersRoot();
 		}
-		
-		// Re-enable folder collapse
-		m_SuppressFolderCollapse = false;
 	}
 	
 	void RestoreSpecificRemovedItems()
@@ -2269,95 +2052,24 @@ class EditorHud: ScriptView
 	
 	void RestoreItemsRemovedFromVirtualFolders()
 	{
-		// Simple but effective approach: check if any items need restoration
-		// and if so, trigger a full reload to ensure everything is properly restored
-		EditorVirtualFolderManager folderManager = EditorVirtualFolderManager.GetInstance();
-		array<ref EditorPlaceableItem> allPlaceableObjects = m_Editor.GetPlaceableObjects();
-		
-		bool needsReload = false;
-		
-		foreach (EditorPlaceableItem placeableItem: allPlaceableObjects)
+		if (m_VirtualFolderUIManager)
 		{
-			string virtualFolderName = folderManager.GetItemFolder(placeableItem);
-			// If item is NOT in any virtual folder, check if it exists in the tree
-			if (virtualFolderName == string.Empty)
-			{
-				bool itemExists = false;
-				
-				// Check model-based items
-				string model_name = placeableItem.GetModelName();
-				if (model_name && model_name != "bmp" && model_name != "bmp.p3d")
-				{
-					itemExists = m_FolderNodes.Contains(model_name);
-				}
-				else
-				{
-					// Check class-based items in searchable nodes
-					string itemTypeLower = placeableItem.Type;
-					itemTypeLower.ToLower();
-					
-					foreach (EditorListNode searchableNode: m_SearchableListNodes)
-					{
-						EditorPlaceableListNode searchablePlaceableNode = EditorPlaceableListNode.Cast(searchableNode);
-						if (searchablePlaceableNode)
-						{
-							EditorListNode itemNodeParent = searchablePlaceableNode.GetListParent();
-							bool isInVirtualFolder = (itemNodeParent && itemNodeParent.IsInherited(EditorVirtualFolderListNode));
-							
-							if (!isInVirtualFolder && searchablePlaceableNode.FilterType(itemTypeLower, false))
-							{
-								itemExists = true;
-								break;
-							}
-						}
-					}
-				}
-				
-				// If item doesn't exist in the tree but should, we need a reload
-				if (!itemExists)
-				{
-					needsReload = true;
-					break;
-				}
-			}
-		}
-		
-		if (needsReload)
-		{
-			EditorLog.Info("Items removed from virtual folders detected, triggering full reload to restore them");
-			// Clear selection first to prevent issues
-			ClearSelection();
-			// Do a full reload which will rebuild the entire tree structure
-			LoadVirtualFolders();
-			// Stop here since LoadVirtualFolders already handles everything
-			m_SuppressFolderCollapse = false;
-			return;
+			m_VirtualFolderUIManager.RestoreItemsRemovedFromVirtualFolders();
+			// Update local references to the UI Manager's data
+			m_VirtualFolderNodes = m_VirtualFolderUIManager.GetVirtualFolderNodes();
+			m_VirtualFoldersRoot = m_VirtualFolderUIManager.GetVirtualFoldersRoot();
 		}
 	}
 	
 	void HideVirtualizedItems()
 	{
-		EditorVirtualFolderManager folderManager = EditorVirtualFolderManager.GetInstance();
-		
-		// Get all virtualized items first (more efficient than checking each item individually)
-		array<ref EditorPlaceableItem> virtualizedItems = new array<ref EditorPlaceableItem>();
-		array<ref EditorPlaceableItem> allPlaceableObjects = m_Editor.GetPlaceableObjects();
-		
-		foreach (EditorPlaceableItem placeableItem: allPlaceableObjects)
+		if (m_VirtualFolderUIManager)
 		{
-			string virtualFolderName = folderManager.GetItemFolder(placeableItem);
-			if (virtualFolderName != string.Empty)
-			{
-				virtualizedItems.Insert(placeableItem);
-			}
+			m_VirtualFolderUIManager.HideVirtualizedItems();
+			// Update local references to the UI Manager's data
+			m_VirtualFolderNodes = m_VirtualFolderUIManager.GetVirtualFolderNodes();
+			m_VirtualFoldersRoot = m_VirtualFolderUIManager.GetVirtualFoldersRoot();
 		}
-		
-		// Now hide only the virtualized items
-		foreach (EditorPlaceableItem virtualizedItem: virtualizedItems)
-		{
-			HideOriginalItemNode(virtualizedItem);
-		}
-		
 	}
 	
 	void HideOriginalItemNode(EditorPlaceableItem item)
@@ -2522,11 +2234,13 @@ class EditorHud: ScriptView
 	
 	void RefreshVirtualFoldersWithReload()
 	{
-		// Clear any stale selection to prevent crashes
-		ClearSelection();
-		
-		// Use this for major changes that require full reload (like new folder creation)
-		LoadVirtualFolders();
+		if (m_VirtualFolderUIManager)
+		{
+			m_VirtualFolderUIManager.RefreshVirtualFoldersWithReload();
+			// Update local references to the UI Manager's data
+			m_VirtualFolderNodes = m_VirtualFolderUIManager.GetVirtualFolderNodes();
+			m_VirtualFoldersRoot = m_VirtualFolderUIManager.GetVirtualFoldersRoot();
+		}
 	}
 	
 	

@@ -1,14 +1,8 @@
 class EditorVirtualFolderData
 {
-    string Name;
     ref array<string> ClassNames = new array<string>();      // types
     ref array<string> ModelPaths = new array<string>();      // .p3d files with paths
     ref array<string> RootFolders = new array<string>();     // entire root folders (prefix)
-    
-    void EditorVirtualFolderData(string name = "")
-    {
-        Name = name;
-    }
     
     bool AddClassName(string className)
     {

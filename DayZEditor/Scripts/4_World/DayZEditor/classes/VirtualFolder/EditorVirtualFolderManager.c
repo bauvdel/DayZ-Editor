@@ -23,7 +23,7 @@ class EditorVirtualFolderManager
             return false;
             
         // Use the user-provided folderName as both the key and the Name field
-        EditorVirtualFolderData newFolder = new EditorVirtualFolderData(folderName);
+        EditorVirtualFolderData newFolder = new EditorVirtualFolderData();
         m_Config.VirtualFolders[folderName] = newFolder;
         m_Config.Save();
         return true;

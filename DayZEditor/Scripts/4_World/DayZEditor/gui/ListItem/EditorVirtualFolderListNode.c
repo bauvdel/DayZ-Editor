@@ -14,6 +14,7 @@ class EditorVirtualFolderListNode: EditorFolderListNode
         IconImage.LoadImageFile(0, EDITOR_ICON_FOLDER);
         IconImage.SetColor(0xFF4CAF50);
         
+        
         RefreshContents();
     }
     
@@ -27,7 +28,7 @@ class EditorVirtualFolderListNode: EditorFolderListNode
         if (!m_VirtualFolderData)
             return;
         int itemCount = ChildrenItems.Count();
-        string displayName = string.Format("%1 (%2)", m_VirtualFolderData.Name, itemCount);
+        string displayName = string.Format("%1 (%2)", m_Text, itemCount);
         Text.SetText(displayName);
     }
 
@@ -64,7 +65,7 @@ class EditorVirtualFolderListNode: EditorFolderListNode
         }
         
         Collapse.Show(itemCount > 0);
-        string displayName = string.Format("%1 (%2)", m_VirtualFolderData.Name, itemCount);
+        string displayName = string.Format("%1 (%2)", m_Text, itemCount);
         Text.SetText(displayName);
         
     }
@@ -80,7 +81,7 @@ class EditorVirtualFolderListNode: EditorFolderListNode
         if (filter == string.Empty)
             return true;
             
-        string folderName = m_VirtualFolderData.Name;
+        string folderName = m_Text;
         folderName.ToLower();
         if (folderName.Contains(filter))
         {
@@ -110,7 +111,7 @@ class EditorVirtualFolderListNode: EditorFolderListNode
     
     void DeleteVirtualFolder()
     {
-        EditorVirtualFolderManager.GetInstance().DeleteFolder(m_VirtualFolderData.Name);
+        EditorVirtualFolderManager.GetInstance().DeleteFolder(m_Text);
         if (GetListParent())
         {
             GetListParent().ChildrenItems.RemoveItem(this);
@@ -127,7 +128,7 @@ class EditorVirtualFolderListNode: EditorFolderListNode
     
     string GetFolderName()
     {
-        return m_VirtualFolderData.Name;
+        return m_Text;
     }
     
     void ConfirmDeleteVirtualFolder(int result)
