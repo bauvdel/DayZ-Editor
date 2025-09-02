@@ -37,7 +37,8 @@ class EditorDeleteVirtualFolderDialog: EditorDialogBase
                 {
                     m_VirtualFolderNode.GetListParent().ChildrenItems.RemoveItem(m_VirtualFolderNode);
                 }
-                m_VirtualFolderNode.GetLayoutRoot().Unlink();
+                if (m_VirtualFolderNode.GetLayoutRoot())
+                    m_VirtualFolderNode.GetLayoutRoot().Unlink();
             }
             
             // Show notification and refresh UI

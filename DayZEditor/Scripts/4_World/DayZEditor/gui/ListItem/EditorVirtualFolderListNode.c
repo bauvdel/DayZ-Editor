@@ -117,7 +117,8 @@ class EditorVirtualFolderListNode: EditorFolderListNode
             GetListParent().ChildrenItems.RemoveItem(this);
         }
         
-        GetLayoutRoot().Unlink();
+        if (GetLayoutRoot())
+            GetLayoutRoot().Unlink();
         
         EditorHud hud = GetEditor().GetEditorHud();
         if (hud)

@@ -311,7 +311,7 @@ class EditorVirtualFolderUIManager
     {
         foreach (EditorVirtualFolderListNode existingNode: m_VirtualFolderNodes)
         {
-            if (existingNode)
+            if (existingNode && existingNode.GetLayoutRoot())
                 existingNode.GetLayoutRoot().Unlink();
         }
         m_VirtualFolderNodes.Clear();
@@ -319,7 +319,7 @@ class EditorVirtualFolderUIManager
     
     protected void ClearVirtualFoldersRoot()
     {
-        if (m_VirtualFoldersRoot)
+        if (m_VirtualFoldersRoot && m_VirtualFoldersRoot.GetLayoutRoot())
         {
             m_VirtualFoldersRoot.GetLayoutRoot().Unlink();
             m_EditorHud.GetFolderNodes().Remove("virtual_folders_root");
@@ -353,16 +353,20 @@ class EditorVirtualFolderUIManager
         // Efficiently hide multiple items
         foreach (EditorPlaceableItem placeableItem: items)
         {
+            if (!placeableItem) continue;
+            
             // Find and hide the placeable item nodes
             string model_name = placeableItem.GetModelName();
             if (model_name && model_name != "bmp" && model_name != "bmp.p3d")
             {
-                if (m_EditorHud.GetFolderNodes().Contains(model_name))
+                if (m_EditorHud.GetFolderNodes() && m_EditorHud.GetFolderNodes().Contains(model_name))
                 {
                     EditorListNode modelNode = m_EditorHud.GetFolderNodes()[model_name];
                     if (modelNode && modelNode.IsInherited(EditorPlaceableListNode))
                     {
-                        modelNode.GetLayoutRoot().Show(false);
+                        Widget layoutRoot = modelNode.GetLayoutRoot();
+                        if (layoutRoot)
+                            layoutRoot.Show(false);
                     }
                 }
             }
@@ -371,7 +375,10 @@ class EditorVirtualFolderUIManager
                 // For class-based items, find in searchable nodes
                 string itemType = placeableItem.Type;
                 
-                foreach (EditorListNode searchableNode: m_EditorHud.GetSearchableListNodes())
+                array<EditorListNode> searchableNodes = m_EditorHud.GetSearchableListNodes();
+                if (searchableNodes)
+                {
+                    foreach (EditorListNode searchableNode: searchableNodes)
                 {
                     if (searchableNode.IsInherited(EditorPlaceableListNode))
                     {
@@ -381,11 +388,14 @@ class EditorVirtualFolderUIManager
                             EditorPlaceableItem nodeItem = placeableNode.GetPlaceableItem();
                             if (nodeItem && nodeItem.Type == itemType)
                             {
-                                placeableNode.GetLayoutRoot().Show(false);
+                                Widget placeableLayoutRoot = placeableNode.GetLayoutRoot();
+                                if (placeableLayoutRoot)
+                                    placeableLayoutRoot.Show(false);
                                 break;
                             }
                         }
                     }
+                }
                 }
             }
         }
@@ -393,16 +403,20 @@ class EditorVirtualFolderUIManager
     
     protected bool IsItemVisibleInternal(EditorPlaceableItem placeableItem)
     {
+        if (!placeableItem) return false;
+        
         // Check if an item is currently visible in the UI
         string model_name = placeableItem.GetModelName();
         if (model_name && model_name != "bmp" && model_name != "bmp.p3d")
         {
-            if (m_EditorHud.GetFolderNodes().Contains(model_name))
+            if (m_EditorHud.GetFolderNodes() && m_EditorHud.GetFolderNodes().Contains(model_name))
             {
                 EditorListNode modelNode = m_EditorHud.GetFolderNodes()[model_name];
                 if (modelNode && modelNode.IsInherited(EditorPlaceableListNode))
                 {
-                    return modelNode.GetLayoutRoot().IsVisible();
+                    Widget layoutRoot = modelNode.GetLayoutRoot();
+                    if (layoutRoot)
+                        return layoutRoot.IsVisible();
                 }
             }
         }
@@ -411,7 +425,10 @@ class EditorVirtualFolderUIManager
             // For class-based items, find in searchable nodes
             string itemType = placeableItem.Type;
             
-            foreach (EditorListNode searchableNode: m_EditorHud.GetSearchableListNodes())
+            array<EditorListNode> searchableNodes = m_EditorHud.GetSearchableListNodes();
+            if (searchableNodes)
+            {
+                foreach (EditorListNode searchableNode: searchableNodes)
             {
                 if (searchableNode.IsInherited(EditorPlaceableListNode))
                 {
@@ -421,10 +438,13 @@ class EditorVirtualFolderUIManager
                         EditorPlaceableItem nodeItem = placeableNode.GetPlaceableItem();
                         if (nodeItem && nodeItem.Type == itemType)
                         {
-                            return placeableNode.GetLayoutRoot().IsVisible();
+                            Widget placeableLayoutRoot = placeableNode.GetLayoutRoot();
+                            if (placeableLayoutRoot)
+                                return placeableLayoutRoot.IsVisible();
                         }
                     }
                 }
+            }
             }
         }
         return false;
