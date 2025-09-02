@@ -1613,14 +1613,10 @@ class EditorHud: ScriptView
 	
 	void RebuildBaseFolderTree()
 	{
-		
 		// Clear all existing folder nodes and rebuild from scratch
-		// This ensures any previously unlinked items are restored
 		m_FolderNodes.Clear();
 		m_FolderNodesByDepth.Clear();
 		m_SearchableListNodes.Clear();
-		
-		// Clear existing content from the left panel (except virtual folders which are handled separately)
 		m_TemplateController.LeftContent.Clear();
 		
 		// Rebuild the folder tree using the same logic as initial load
@@ -1710,8 +1706,7 @@ class EditorHud: ScriptView
 	
 	void CollapseAllFolders()
 	{
-		// Start retry system to ensure all folders are collapsed
-		CollapseAllFoldersWithRetry(0, 6); // Start with attempt 0, max 5 attempts
+		CollapseAllFoldersWithRetry(0, 6); // six attempts seems to be enough to catch all folders
 	}
 	
 	void CollapseAllFoldersWithRetry(int attempt, int maxAttempts)
@@ -1723,12 +1718,11 @@ class EditorHud: ScriptView
 		}
 		
 		if (attempt >= maxAttempts) {
-			return; // Give up after max attempts
+			return; 
 		}
 		
 		int foldersCollapsedThisAttempt = CollapseAllFoldersOnce();
-		
-		// If we collapsed some folders OR it's the first attempt, try again after a delay
+
 		if (foldersCollapsedThisAttempt > 0 || attempt < 2) {
 			GetGame().GetCallQueue(CALL_CATEGORY_GUI).CallLater(this.CollapseAllFoldersWithRetry, 75, 0, attempt + 1, maxAttempts);
 		}
@@ -1750,7 +1744,6 @@ class EditorHud: ScriptView
 		int searchableFolders = 0;
 		
 		
-		// Check all folder nodes by depth with recursive collapse
 		for (int depth = 0; depth < m_FolderNodesByDepth.Count(); depth++) {
 			if (m_FolderNodesByDepth[depth]) {
 				foreach (EditorListNode folderAtDepth: m_FolderNodesByDepth[depth]) {
@@ -1765,7 +1758,6 @@ class EditorHud: ScriptView
 			}
 		}
 		
-		// Check all named folder nodes with recursive collapse and detailed logging
 		int namedTotal = 0;
 		int namedFolderType = 0;
 		int namedAlreadyCollapsed = 0;
@@ -1787,7 +1779,6 @@ class EditorHud: ScriptView
 		}
 		
 		
-		// Check all virtual folders - but don't collapse them if they have virtual folders that should be visible
 		string searchText = LeftSearchBar.GetText();
 		bool shouldPreserveVirtualFolders = (searchText.Length() == 0 && m_VirtualFolderNodes.Count() > 0);
 		
@@ -1800,14 +1791,12 @@ class EditorHud: ScriptView
 				}
 			}
 			
-			// Check Virtual Folders root
 			if (m_VirtualFoldersRoot && !m_VirtualFoldersRoot.IsCollapsed()) {
 				m_VirtualFoldersRoot.SetCollapsed(true);
 				foldersCollapsed++;
 			}
 		}
 		
-		// Check all searchable nodes for any folders we might have missed
 		foreach (EditorListNode searchableNode: m_SearchableListNodes) {
 			if (searchableNode && searchableNode.IsInherited(EditorFolderListNode)) {
 				if (!searchableNode.IsCollapsed()) {
@@ -1891,13 +1880,13 @@ class EditorHud: ScriptView
 					string model_name = placeableItem.GetModelName();
 					if (!model_name || model_name == "bmp" || model_name == "bmp.p3d" || model_name.Length() == 0)
 					{
-						// This is a class-based item, we need full rebuild
+						// Class-based need full rebuild - need to retest
 						needsFullRebuild = true;
 						break;
 					}
 					else
 					{
-						// This is a model-based item, we can restore it individually
+						// model-based item - need to retest
 						modelItemsToRestore.Insert(placeableItem);
 					}
 				}
